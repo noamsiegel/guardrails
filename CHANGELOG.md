@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] — guardrails doctor --all (multi-repo audit)
+
+### Added
+- `guardrails doctor --all [--root <path>]` walks a root and reports per-repo install state (installed / not-installed / bypass / opt-out) with a suggested fix for bypass repos.
+- `pai-hooks doctor` is now a deprecation shim that forwards to `guardrails doctor --all`.
+
 ## [0.3.2] — version-sync hotfix
 
 Bump GUARDRAILS_VERSION constant to match tag (was stuck at 0.3.0).

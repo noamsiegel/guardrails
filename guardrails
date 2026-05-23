@@ -14,7 +14,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-GUARDRAILS_VERSION="0.3.2"
+GUARDRAILS_VERSION="0.3.3"
 GUARDRAILS_API_VERSION="guardrails.v0"
 
 # Resolve install dir. When run from brew, GUARDRAILS_HOME points at pkgshare.
@@ -308,6 +308,20 @@ cmd_run() {
 }
 
 cmd_doctor() {
+  local all=0 root="${HOME}/Documents/GitHub"
+  while (($#)); do
+    case "$1" in
+      --all) all=1; shift ;;
+      --root) root="$2"; shift 2 ;;
+      -*) die 10 "unknown flag: $1" ;;
+      *) die 10 "unexpected positional: $1" ;;
+    esac
+  done
+
+  if (( all == 1 )); then
+    cmd_doctor_all "$root"
+    return $?
+  fi
   local fail=0
   printf '%-40s' "guardrails version"; green "$GUARDRAILS_VERSION\n"
   printf '%-40s' "templates dir"
@@ -350,6 +364,120 @@ cmd_doctor() {
   fi
 
   return $fail
+}
+
+cmd_doctor_all() {
+  local root="$1"
+  [[ -d "$root" ]] || die 10 "scan root does not exist: $root"
+
+  local installed=0 not_installed=0 bypass=0 opt_out=0 total=0
+  local repos_installed=() repos_not_installed=() repos_bypass=() repos_optout=()
+
+  # Walk the root looking for .git/ (or .git file for worktrees).
+  while IFS= read -r repo; do
+    [[ -z "$repo" ]] && continue
+    total=$((total + 1))
+    local cat
+    cat=$(_audit_repo "$repo")
+    case "$cat" in
+      installed)
+        repos_installed+=("$repo")
+        installed=$((installed + 1))
+        ;;
+      not-installed)
+        repos_not_installed+=("$repo")
+        not_installed=$((not_installed + 1))
+        ;;
+      bypass)
+        repos_bypass+=("$repo")
+        bypass=$((bypass + 1))
+        ;;
+      opt-out)
+        repos_optout+=("$repo")
+        opt_out=$((opt_out + 1))
+        ;;
+    esac
+  done < <(_find_git_repos "$root")
+
+  printf 'guardrails doctor --all — scan root: %s\n' "$root"
+  printf '  %d repos | ' "$total"
+  green "$installed installed"; printf ' | '
+  dim "$not_installed not-installed"; printf ' | '
+  yellow "$bypass bypass"; printf ' | '
+  dim "$opt_out opt-out"; printf '\n\n'
+
+  if (( installed > 0 )); then
+    green "installed — guardrails-managed hooks present:\n"
+    for r in "${repos_installed[@]}"; do
+      printf '  ✓ %s\n' "${r#$root/}"
+    done
+    printf '\n'
+  fi
+
+  if (( not_installed > 0 )); then
+    dim "not-installed — run \`cd <repo> && guardrails install\` to enroll:\n"
+    for r in "${repos_not_installed[@]}"; do
+      printf '  · %s\n' "${r#$root/}"
+    done
+    printf '\n'
+  fi
+
+  if (( bypass > 0 )); then
+    yellow "bypass — local core.hooksPath set to a non-guardrails path:\n"
+    for r in "${repos_bypass[@]}"; do
+      local hp; hp=$(git -C "$r" config --local --get core.hooksPath 2>/dev/null)
+      printf '  ✗ %s   (hooksPath: %s)\n' "${r#$root/}" "$hp"
+    done
+    printf '  fix: in each, add this near the top of the existing hook script:\n'
+    dim "    [ -x \"\$(command -v guardrails)\" ] && guardrails run <hook> \"\$@\" || true\n"
+    printf '\n'
+  fi
+
+  if (( opt_out > 0 )); then
+    dim "opt-out — explicitly skipped:\n"
+    for r in "${repos_optout[@]}"; do
+      printf '  — %s\n' "${r#$root/}"
+    done
+  fi
+}
+
+_find_git_repos() {
+  local root="$1"
+  # Find dirs that contain .git (either as dir or file for worktrees).
+  # Stop descending into a repo once found.
+  find "$root" -type d -maxdepth 5 \( -name node_modules -o -name .venv -o -name venv -o -name .worktrees \) -prune -o \
+    \( -name .git -o -type f -name .git \) -print 2>/dev/null \
+    | xargs -I {} dirname {} | sort -u
+}
+
+_audit_repo() {
+  local repo="$1" canonical
+  # Canonicalize for opt-out comparison (macOS /var → /private/var).
+  canonical=$(cd "$repo" 2>/dev/null && pwd -P) || { echo "not-installed"; return; }
+
+  if [[ -f "$GUARDRAILS_OPT_OUT" ]] && grep -Fxq "$canonical" "$GUARDRAILS_OPT_OUT"; then
+    echo "opt-out"; return
+  fi
+
+  local hooks_dir
+  hooks_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || { echo "not-installed"; return; }
+  hooks_dir="$hooks_dir/hooks"
+
+  # Check for guardrails marker in any of our hooks.
+  local hook
+  for hook in "${GUARDRAILS_HOOKS[@]}"; do
+    if [[ -f "$hooks_dir/$hook" ]] && grep -Fq "$GUARDRAILS_HOOK_MARKER" "$hooks_dir/$hook" 2>/dev/null; then
+      echo "installed"; return
+    fi
+  done
+
+  # Local hooksPath set + not ours = bypass.
+  local hp; hp=$(git -C "$repo" config --local --get core.hooksPath 2>/dev/null)
+  if [[ -n "$hp" ]]; then
+    echo "bypass"; return
+  fi
+
+  echo "not-installed"
 }
 
 cmd_global_template() {
