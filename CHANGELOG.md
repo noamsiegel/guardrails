@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] — real CLI binary (per-repo install, ownership marker)
+
+### Breaking
+- guardrails is now a proper CLI binary, not a directory you point `core.hooksPath` at.
+- The previous global-hooksPath install model is replaced by per-repo `guardrails install`.
+
+### Added
+- **`guardrails install`** — installs hooks into the current repo's `.git/hooks/` with ownership marker. Sets local `core.hooksPath` to override any global setting (e.g. wt). Detects existing hook systems (Husky, lefthook, pre-commit framework, custom `.githooks/`) and prints a one-line compose snippet instead of clobbering.
+- **`guardrails uninstall`** — removes only guardrails-managed hooks (marker-based). Restores `core.hooksPath` to global default if no other hooks remain.
+- **`guardrails run <hook>`** — the actual hook logic, invoked by installed shims. Delegates to `lefthook run` with shipped config.
+- **`guardrails doctor`** — audits the current repo + tool reachability under sanitized PATH.
+- **`guardrails migrate [--apply]`** — migrates from legacy `~/.git-hooks-personal/` install. Defaults to dry-run; `--apply` performs the migration.
+- **`guardrails --global-template`** — wires `git init.templateDir` so new clones auto-install guardrails hooks.
+- **`--force` flag** on install to override conflicts.
+- **`--skip <hook>` flag** to install a subset.
+
+### Security
+- Generated hooks contain a stable ownership marker (`# guardrails-managed: guardrails.v0`).
+- Install uses `rm -f` before write to prevent symlink-target overwrites (a destructive pattern from the legacy install model).
+- `core.hooksPath`-conflict detection refuses install by default with a useful error.
+
+## [0.2.0] — integration + portability + governance
+
+### Added
+- XDG `init.sh` support in entry shims (asdf/mise/nvm/volta compatibility).
+- `branch-guard` reads `protected_refs` from wt config when running inside a wt-managed repo.
+- OSS governance: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, ISSUE_TEMPLATE, PR template, CODEOWNERS.
+- Release CI workflows (test on PR + workflow_dispatch semver release).
+
 ## [0.1.0] — initial public release
 
 ### Added
