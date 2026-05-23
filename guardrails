@@ -14,7 +14,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-GUARDRAILS_VERSION="0.3.0"
+GUARDRAILS_VERSION="0.3.2"
 GUARDRAILS_API_VERSION="guardrails.v0"
 
 # Resolve install dir. When run from brew, GUARDRAILS_HOME points at pkgshare.

@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] — version-sync hotfix
+
+Bump GUARDRAILS_VERSION constant to match tag (was stuck at 0.3.0).
+
 ## [0.3.1] — stale state cleanup
 
 ### Removed
