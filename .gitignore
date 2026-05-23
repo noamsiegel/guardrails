@@ -1,0 +1,12 @@
+# Local opt-out file (not shared between machines)
+.opt-out
+
+# Local commitlint node_modules
+node_modules/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

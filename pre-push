@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# guardrails personal pre-push entry shim.
+# Invoked by wt's ~/.config/git/hooks/pre-push before exec_chain.
+#
+# pre-push receives the ref list on stdin per git's hook protocol:
+#   <local-ref> <local-sha> <remote-ref> <remote-sha>
+# lefthook consumes stdin before commands see it, so we run the
+# ref-aware branch-guard ourselves, THEN hand stdin to lefthook for
+# the rest of the pre-push commands.
+
+set -euo pipefail
+
+# PATH sanitization: defend against ambient PATH hijack. Override with
+# GUARDRAILS_PATH if your tools live elsewhere (e.g. Linux distros).
+export PATH="${GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}"
+
+[[ "${SKIP_PERSONAL_HOOKS:-0}" == "1" ]] && exit 0
+
+# Per-repo opt-out: USER-OWNED file only (no in-repo marker).
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$repo_root" ]] && [[ -f "$HOME/.git-hooks-personal/.opt-out" ]]; then
+  grep -Fxq "$repo_root" "$HOME/.git-hooks-personal/.opt-out" && exit 0
+fi
+
+# Capture stdin so we can feed it to both branch-guard and lefthook.
+tmp=$(mktemp -t guardrails-prepush.XXXXXX)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+
+# 1) Branch-guard runs OUTSIDE lefthook because it needs the raw refs stdin.
+if [[ -z "${SKIP_BRANCH_GUARD:-}" ]]; then
+  if ! "$HOME/.git-hooks-personal/checks/branch-guard.sh" < "$tmp"; then
+    exit 1
+  fi
+fi
+
+# 2) Everything else (fallow, future checks) goes through lefthook.
+#    Don't `exec` — the EXIT trap above is the cleanup path for $tmp, and
+#    `exec` replaces this shell, skipping the trap. Run, capture status, exit.
+env LEFTHOOK_CONFIG="$HOME/.git-hooks-personal/lefthook.yml" \
+  lefthook run pre-push --no-tty --no-auto-install < "$tmp"
+exit $?

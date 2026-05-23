@@ -1,0 +1,9 @@
+{
+  "name": "guardrails-personal-hooks",
+  "private": true,
+  "description": "Local node_modules for commitlint config resolution. Not published.",
+  "dependencies": {
+    "@commitlint/config-conventional": "^21.0.1",
+    "bun-types": "^1.3.14"
+  }
+}

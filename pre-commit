@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# guardrails personal pre-commit entry shim.
+# Invoked by wt's ~/.config/git/hooks/pre-commit before exec_chain.
+# Pure delegation to lefthook with opt-out checks.
+
+set -euo pipefail
+
+# PATH sanitization: defend against ambient PATH hijack. Override with
+# GUARDRAILS_PATH if your tools live elsewhere (e.g. Linux distros).
+export PATH="${GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}"
+
+# Global bypass.
+[[ "${SKIP_PERSONAL_HOOKS:-0}" == "1" ]] && exit 0
+
+# Per-repo opt-out: USER-OWNED file only. We deliberately do NOT honor any
+# in-repo marker (.no-personal-hooks) because a hostile repository should not
+# be able to disable user-level security checks by committing one file.
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$repo_root" ]] && [[ -f "$HOME/.git-hooks-personal/.opt-out" ]]; then
+  grep -Fxq "$repo_root" "$HOME/.git-hooks-personal/.opt-out" && exit 0
+fi
+
+exec env LEFTHOOK_CONFIG="$HOME/.git-hooks-personal/lefthook.yml" \
+  lefthook run pre-commit --no-tty --no-auto-install

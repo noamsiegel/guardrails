@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# guardrails personal commit-msg entry shim.
+# Invoked by wt's _wt-chain via the commit-msg symlink before delegating to
+# any per-repo .git/hooks/commit-msg.
+# Arg $1 is the path to the commit message file (.git/COMMIT_EDITMSG).
+
+set -euo pipefail
+
+# PATH sanitization: defend against ambient PATH hijack. Override with
+# GUARDRAILS_PATH if your tools live elsewhere (e.g. Linux distros).
+export PATH="${GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}"
+
+# Git invokes commit-msg with the message file as $1. Validate before set -u
+# trips with an opaque "unbound variable" error.
+if [[ $# -ne 1 || ! -f "$1" ]]; then
+  echo "guardrails commit-msg: expected exactly one arg (commit message file)" >&2
+  exit 2
+fi
+
+[[ "${SKIP_PERSONAL_HOOKS:-0}" == "1" ]] && exit 0
+
+# Per-repo opt-out: USER-OWNED file only (no in-repo marker).
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$repo_root" ]] && [[ -f "$HOME/.git-hooks-personal/.opt-out" ]]; then
+  grep -Fxq "$repo_root" "$HOME/.git-hooks-personal/.opt-out" && exit 0
+fi
+
+# lefthook's commit-msg needs the message-file path; pass via env + positional.
+export LEFTHOOK_COMMIT_MSG_FILE="$1"
+exec env LEFTHOOK_CONFIG="$HOME/.git-hooks-personal/lefthook.yml" \
+  lefthook run commit-msg --no-tty --no-auto-install -- "$1"
