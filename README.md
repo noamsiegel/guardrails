@@ -1,163 +1,141 @@
 # guardrails
 
-> Cross-repo personal git-hook quality layer that composes with whatever your repo already uses.
+> Personal git-hook quality layer. Installs per-repo with safe ownership marker.
 
-`guardrails` is a portable [lefthook](https://github.com/evilmartians/lefthook)
-config + bash helpers that adds the **same handful of universal quality
-checks** to every git repo you work in, without conflicting with the repo's
-own lint/format/typecheck setup.
+`guardrails` is a small CLI that installs a curated set of universal quality
+checks into each repo you opt in, without conflicting with the repo's own
+lint/format/typecheck setup. It composes cleanly with Husky, lefthook, the
+pre-commit framework, or no other hook system at all.
 
-## What runs
+## What it runs
 
-Universal checks only — these are the ones every repo benefits from, and
-none of them duplicate what the repo's own tooling does:
+Universal checks only — the kind every repo benefits from, none of which
+duplicate what the repo's own tooling does:
 
-| Hook | Check | Tool | What it catches |
-|---|---|---|---|
-| `pre-commit` | secrets | [gitleaks](https://github.com/gitleaks/gitleaks) | API keys, JWTs, AWS creds, etc. in staged changes |
-| `pre-commit` | workflow lint | [actionlint](https://github.com/rhysd/actionlint) | broken `.github/workflows/*.yml` |
-| `pre-commit` | large files | bash + `git cat-file -s` | files >5MB landing in your history (configurable) |
-| `commit-msg` | message format | [commitlint](https://commitlint.js.org/) | non-Conventional Commits messages |
-| `pre-push` | branch protection | bash | direct pushes to `main`/`master`/`trunk`/`release/*` |
-| `pre-push` | code quality | [fallow](https://github.com/fallow-rs/fallow) | unused code, dead deps, duplication, hotspots (JS/TS only) |
+| Hook | Check | Tool |
+|---|---|---|
+| `pre-commit` | secrets | [gitleaks](https://github.com/gitleaks/gitleaks) (user-owned baseline; repo cannot weaken via `.gitleaks.toml`) |
+| `pre-commit` | workflow lint | [actionlint](https://github.com/rhysd/actionlint) (only on `.github/workflows/*.yml`) |
+| `pre-commit` | large files | `git cat-file -s` on staged blobs (>5MB; closes staged-blob-vs-worktree bypass) |
+| `commit-msg` | message format | [commitlint](https://commitlint.js.org/) with `@commitlint/config-conventional` |
+| `pre-push` | branch protection | bash — refuses direct pushes to `main`/`master`/`trunk`/`release/*` (configurable; also reads `protected_refs` from wt config when in a wt-managed repo) |
+| `pre-push` | code quality | [fallow](https://github.com/fallow-rs/fallow) on JS/TS repos |
 
-What's deliberately NOT in scope: `eslint`, `prettier`, `ruff`, `biome`,
-`tsc`, `mypy`, project-specific tests. Those belong to each repo.
-
-## Composes with what you have
-
-Guardrails is designed to layer on top of (not replace) anything else
-running in your hooks. If a repo uses Husky, lefthook, the pre-commit
-framework, or a custom orchestrator, guardrails runs *before* that —
-catching universals first, then handing off.
-
-The canonical install is a 3-tier chain:
-
-```
-git commit / push
-   ↓
-(optional) wt hook        ← worktree-aware checks (canonical-refuse, autopush)
-   ↓
-guardrails hook            ← universal quality checks (this repo)
-   ↓
-repo-local .git/hooks/*   ← repo-specific stuff (lint, format, typecheck, tests)
-```
-
-The bridge between the wt layer and guardrails is `_wt-personal.sh` which
-ships with [git-wt](https://github.com/noamsiegel/git-wt). If you don't use
-wt, you can wire guardrails directly to `core.hooksPath` instead.
+Deliberately NOT in scope: `eslint`, `prettier`, `ruff`, `biome`, `tsc`,
+`mypy`, project tests. Those belong to each repo's own CI.
 
 ## Install
 
 ```bash
-brew install lefthook gitleaks actionlint
-bun install -g @commitlint/cli
-
-git clone https://github.com/noamsiegel/guardrails.git ~/.git-hooks-personal
-cd ~/.git-hooks-personal && bun install   # populates @commitlint/config-conventional for commit-msg
+brew tap noamsiegel/tap
+brew install noamsiegel/tap/guardrails
 ```
 
-Then wire it as your global hook target. Two options:
-
-**Option A — Standalone (no wt):**
-```bash
-git config --global core.hooksPath ~/.git-hooks-personal
-```
-
-**Option B — Layered with [git-wt](https://github.com/noamsiegel/git-wt):**
-Install git-wt; its `_wt-personal.sh` bridge auto-discovers guardrails at
-`~/.git-hooks-personal/` and invokes it inside wt's hook chain. No additional
-config needed.
-
-## Configure
-
-Set `GUARDRAILS_HOME` if guardrails lives somewhere other than
-`~/.git-hooks-personal`:
-```bash
-export GUARDRAILS_HOME="$HOME/code/guardrails"
-```
-
-## XDG init.sh
-
-If you use asdf, mise, nvm, volta, rbenv, or other PATH-manipulating
-version managers, the default sanitized PATH may not include your tools.
-Create `${XDG_CONFIG_HOME:-$HOME/.config}/guardrails/init.sh` to extend
-PATH before hooks run:
+That puts `guardrails` on `PATH` at `/opt/homebrew/bin/guardrails`. Then in
+each repo you want enrolled:
 
 ```bash
-# ~/.config/guardrails/init.sh
-. "$HOME/.asdf/asdf.sh"  # or whatever your version manager needs
+cd <some-repo>
+guardrails install
 ```
 
-The script is sourced (not exec'd) so `export PATH=...` propagates correctly.
+That writes hook shims into `.git/hooks/{pre-commit,pre-push,commit-msg}`
+with an ownership marker (`# guardrails-managed: guardrails.v0`) and sets
+local `core.hooksPath` to point at them. The shims invoke `guardrails run
+<hook>` which delegates to `lefthook` with the shipped config.
 
-For per-repo customization, use the standard tool config files:
-- `.gitleaksignore` for fingerprint-based gitleaks exceptions (safe, per-commit).
-- `.fallowrc.json` for fallow project config.
+To enroll **new** clones automatically:
 
-For cross-repo customization, edit your local checkout of `gitleaks.toml`
-and `commitlint.config.cjs`.
+```bash
+guardrails --global-template
+```
+
+That wires `git config --global init.templateDir` so every subsequent
+`git init` / `git clone` installs guardrails hooks.
+
+## Commands
+
+```bash
+guardrails install [--force] [--skip <hook>]   # install hooks in current repo
+guardrails uninstall                            # remove only ours-marked hooks
+guardrails doctor                               # audit current repo + tool reachability
+guardrails run <hook>                           # invoked by installed shims
+guardrails migrate [--apply]                    # migrate from legacy ~/.git-hooks-personal/
+guardrails --global-template                    # auto-install on new clones
+guardrails --version
+```
+
+`guardrails install` is conflict-aware: it refuses to clobber non-guardrails
+hooks unless you pass `--force`, and it detects Husky/lefthook/pre-commit
+configs in the repo and prints a one-line compose snippet if you'd rather
+chain than override.
 
 ## Bypass
 
-Layered escape hatches, smallest hammer first:
-
 | Goal | How |
 |---|---|
-| Skip one check, once | `SKIP_GITLEAKS=1 git commit ...` (also: `SKIP_ACTIONLINT`, `SKIP_LARGE_FILES`, `SKIP_COMMITLINT`, `SKIP_BRANCH_GUARD`, `SKIP_FALLOW`) |
+| Skip one check, once | `SKIP_GITLEAKS=1 git commit ...` (also `SKIP_ACTIONLINT`, `SKIP_LARGE_FILES`, `SKIP_COMMITLINT`, `SKIP_BRANCH_GUARD`, `SKIP_FALLOW`) |
 | Allow push to protected branch (one-time) | `ALLOW_PROTECTED_PUSH=1 git push ...` |
 | Raise large-file threshold | `LARGE_FILE_LIMIT_MB=20 git commit ...` |
 | Pin fallow to a different version | `FALLOW_VERSION=2.45.0 git push ...` |
-| Skip all guardrails for this invocation | `SKIP_PERSONAL_HOOKS=1 git commit ...` |
-| Override PATH for non-standard tool locations | `export GUARDRAILS_PATH="..."` in your shell rc |
-| Opt out of guardrails for one repo permanently | Add the repo's canonical path to `$GUARDRAILS_HOME/.opt-out`, one per line |
+| Skip all guardrails for one invocation | `SKIP_PERSONAL_HOOKS=1 git commit ...` |
+| Opt out a repo permanently | Add canonical path to `~/.config/guardrails/.opt-out`, one per line |
+| Override PATH for non-standard tool locations | Drop a file at `~/.config/guardrails/init.sh` to extend `PATH` (asdf/mise/nvm) |
 | Skip everything (guardrails AND repo hooks) | `git commit --no-verify` / `git push --no-verify` |
 
-Note: there is deliberately **no in-repo opt-out marker** (e.g.
-`.no-personal-hooks`). A repository must not be able to disable user-level
-security checks by committing a file. Opt-outs live only in your home
-directory.
+There is deliberately **no in-repo opt-out marker.** A repository must not
+be able to disable user-level security checks by committing a file.
 
-## Doctor
+## Security properties
+
+- **No repo-local control over what guardrails runs.** Hostile repos cannot
+  weaken via `.gitleaks.toml` allowlists (guardrails uses an explicit
+  `--config` to a user-owned baseline).
+- **No in-repo opt-out marker.** Only `~/.config/guardrails/.opt-out`.
+- **Staged-blob large-file check.** Inspects `git cat-file -s :path`, not
+  worktree bytes — staging a large blob and truncating the worktree no
+  longer bypasses.
+- **Ownership marker.** Generated hooks contain `# guardrails-managed:
+  guardrails.v0`. `guardrails uninstall` removes only matching hooks.
+- **`rm -f` before write.** Install never follows symlinks (a subtle but
+  catastrophic bug class that we shipped a fix for in v0.3.0).
+- **PATH sanitized at hook entry** (override via `GUARDRAILS_PATH`).
+- **`core.hooksPath`-conflict detection.** Refuses install by default if
+  the repo already overrides hooksPath, with a useful error and `--force`
+  escape.
+
+## Migration from legacy install
+
+If you were using the pre-v0.3.0 model where guardrails lived at
+`~/.git-hooks-personal/` and was wired via global `core.hooksPath`:
 
 ```bash
-bun ~/.git-hooks-personal/skill/doctor.ts
-# or, if you've installed it into PATH:
-pai-hooks doctor
-```
+guardrails migrate           # dry-run
+guardrails migrate --apply   # perform the migration
 
-Audits every git repo under `~/Documents/GitHub/` (configurable via `--root`)
-and reports which ones will fire guardrails vs which override `core.hooksPath`
-locally. For overrides, it emits the exact shim snippet to paste.
+# Then, in each repo you want enrolled:
+cd <repo> && guardrails install
+
+# When validated, delete the legacy dir:
+rm -rf ~/.git-hooks-personal
+```
 
 ## Tests
 
 ```bash
-bun test tests/guardrails.test.ts
+cd <clone>
+brew install lefthook gitleaks actionlint bats-core
+bun install                                # only needed for the test fixtures
+bats tests/                                # all of them
 ```
 
-22 tests covering: hostile-repo `.gitleaks.toml` allowlist defeated; branch-guard list/regex modes; large-files staged-vs-worktree blob check; per-repo opt-out; in-repo marker correctly ignored; env-var poisoning defended; commitlint enforcement; doctor handles worktrees.
-
-## Security properties
-
-- **No repo-local control over what guardrails runs.** Hostile or careless
-  repos cannot weaken or disable the user's security checks.
-- **PATH sanitized at hook entry** (override with `GUARDRAILS_PATH`). Tools
-  resolve to known locations, not whatever `$PATH` says when `git commit`
-  runs.
-- **Gitleaks runs against a user-owned baseline config**, not the repo's
-  `.gitleaks.toml`. A repo can still use `.gitleaksignore` for safe
-  per-commit exceptions, but cannot add broad allowlists.
-- **Large-files inspects the staged blob via `git cat-file -s`**, not the
-  worktree. Staging a large blob and then truncating the worktree file no
-  longer bypasses the check.
-- **Branch-guard supports both literal list mode and regex mode**, with
-  default anchoring. `PROTECTED_BRANCHES_LIST=main` does NOT match `domain`.
-
-## Companion tools
+## Companions
 
 - [git-wt](https://github.com/noamsiegel/git-wt) — parallel-safe worktree
-  CLI for agentic coding. The natural worktree layer below guardrails.
+  CLI for agentic coding. Sets `protected_refs` per-repo that guardrails'
+  `branch-guard` reads automatically.
+- [provenance](https://github.com/noamsiegel/provenance) — capture Claude
+  Code session transcripts as secret gists linked from PRs.
 
 ## License
 

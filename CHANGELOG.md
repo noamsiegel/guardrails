@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] — stale state cleanup
+
+### Removed
+- Obsolete v0.2.x entry shim files: `pre-commit`, `pre-push`, `commit-msg` (replaced by the `guardrails` binary).
+- `package.json` + `bun.lock` (no longer needed; the binary ships its own commitlint config from `pkgshare`).
+- `skill/` subdirectory (the multi-repo audit skill lives in `~/.pai/skills/guardrails/` on the user's machine, not in the public repo).
+
+### Changed
+- README rewritten to reflect the binary install model (per-repo `guardrails install` only).
+
 ## [0.3.0] — real CLI binary (per-repo install, ownership marker)
 
 ### Breaking
