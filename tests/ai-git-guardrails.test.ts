@@ -60,7 +60,7 @@ function testEnv(configHome: string): NodeJS.ProcessEnv {
     ...process.env,
     AI_GIT_GUARDRAILS_TEMPLATES: REPO_ROOT,
     XDG_CONFIG_HOME: configHome,
-    PATH: `${REPO_ROOT}:${process.env.PATH ?? ''}`,
+    PATH: `${REPO_ROOT}:${REPO_ROOT}/node_modules/.bin:${process.env.PATH ?? ''}`,
     NODE_PATH: `${globalNodePaths.join(':')}${process.env.NODE_PATH ? `:${process.env.NODE_PATH}` : ''}`,
   };
 }
