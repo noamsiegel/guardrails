@@ -14,7 +14,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-GUARDRAILS_VERSION="0.6.0"
+GUARDRAILS_VERSION="0.7.0"
 GUARDRAILS_API_VERSION="guardrails.v0"
 
 # Resolve install dir. When run from brew, GUARDRAILS_HOME points at pkgshare.
@@ -39,6 +39,14 @@ if [[ ! -f "$GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then
     fi
   done
 fi
+# Shell-readable universal checks registry.
+if [[ ! -f "$GUARDRAILS_TEMPLATES/checks/registry.sh" ]]; then
+  printf '%s\n' "ERROR: guardrails registry not found at $GUARDRAILS_TEMPLATES/checks/registry.sh" >&2
+  exit 40
+fi
+# shellcheck source=checks/registry.sh
+. "$GUARDRAILS_TEMPLATES/checks/registry.sh"
+
 
 GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/guardrails"
 GUARDRAILS_OPT_OUT="$GUARDRAILS_CONFIG_DIR/.opt-out"
@@ -169,6 +177,19 @@ _is_guardrails_hook() {
   hook=$(basename "$hook_file")
   [[ "$(_classify_hook "$hooks_dir" "$hook")" == "ours" ]]
 }
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+_registry_skip_envs_for_hook() {
+  local hook="$1" entry entry_hook _command skip_env _required_tools _rationale
+  for entry in "${GUARDRAILS_CHECKS[@]}"; do
+    IFS='|' read -r entry_hook _command skip_env _required_tools _rationale <<< "$entry"
+    [[ "$entry_hook" == "$hook" ]] || continue
+    printf '%s=1 ' "$skip_env"
+  done
+}
+
 
 # ---------- generate hook shim ----------
 
@@ -213,7 +234,7 @@ exec guardrails run $hook "\$@"
 EOF
       ;;
     bypass-help)
-      printf 'SKIP_PERSONAL_HOOKS=1 guardrails run %s "$@" || true\n' "$hook"
+      printf '%sguardrails run %s "$@" || true\n' "$(_registry_skip_envs_for_hook "$hook")" "$hook"
       ;;
     *)
       return 1
@@ -455,12 +476,22 @@ cmd_doctor() {
   if [[ -f "$GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then green "$GUARDRAILS_TEMPLATES\n"
   else red "MISSING: $GUARDRAILS_TEMPLATES/lefthook.yml\n"; fail=1; fi
 
-  for tool in lefthook gitleaks actionlint git bash bun commitlint; do
+  local tool
+  for tool in "${GUARDRAILS_REQUIRED_TOOLS[@]}"; do
     printf '%-40s' "$tool reachable"
-    if command -v "$tool" >/dev/null 2>&1; then
+    if have "$tool"; then
       green "$(command -v "$tool")\n"
     else
-      yellow "NOT FOUND (some hooks may skip)\n"
+      red "MISSING (required by registry)\n"
+      fail=1
+    fi
+  done
+  for tool in "${GUARDRAILS_OPTIONAL_TOOLS[@]}"; do
+    printf '%-40s' "$tool reachable"
+    if have "$tool"; then
+      green "$(command -v "$tool")\n"
+    else
+      yellow "NOT FOUND (corresponding registry checks may skip)\n"
     fi
   done
 
@@ -777,11 +808,11 @@ EOF
 
 config:
   ${XDG_CONFIG_HOME:-$HOME/.config}/guardrails/         user config dir (opt-out, init.sh)
-  $GUARDRAILS_TEMPLATES/lefthook.yml   source of truth for what runs
+  $GUARDRAILS_TEMPLATES/checks/registry.sh   source of truth for what runs
 
 bypass:
   SKIP_PERSONAL_HOOKS=1                skip all guardrails checks
-  SKIP_GITLEAKS=1 (etc.)               per-check skip
+  per-check SKIP_* env vars          skip one registry check
   ALLOW_PROTECTED_PUSH=1               one-time protected-branch override
   git commit --no-verify               nuclear (skips guardrails + repo hooks)
 EOF

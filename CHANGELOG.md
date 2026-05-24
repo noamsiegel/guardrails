@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] — universals registry
+
+### Added
+- `checks/registry.sh` is the shell-readable source of truth for universal checks, skip env vars, required tools, optional tools, and rationale.
+- Registry tests cover loadability, field shape, lefthook skip-env cross-checks, required tool reachability, and doctor reachability output parity.
+
+### Changed
+- `guardrails doctor` builds tool reachability from the registry instead of a hardcoded list.
+- `_compose_snippet <hook> bypass-help` builds per-check skip-env hints from the registry.
+- `lefthook.yml` and README now cross-reference the registry-backed universal check list.
+
 ## [0.6.0] — compose-shim contract
 
 ### Added

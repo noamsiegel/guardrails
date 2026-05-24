@@ -9,6 +9,15 @@
 # so consumers can vendor this file into any directory by setting GUARDRAILS_TEMPLATES
 # to that location.
 #
+# Universal checks registry: checks/registry.sh is canonical.
+# Cross-check entries (command -> skip env):
+#   - branch-guard -> SKIP_BRANCH_GUARD
+#   - large-files -> SKIP_LARGE_FILES
+#   - gitleaks -> SKIP_GITLEAKS
+#   - actionlint -> SKIP_ACTIONLINT
+#   - commitlint -> SKIP_COMMITLINT
+#   - fallow -> SKIP_FALLOW
+#
 # Bypass:
 #   - SKIP_PERSONAL_HOOKS=1 git commit          (skip everything)
 #   - SKIP_<CHECK>=1 git commit                  (per-check skip)

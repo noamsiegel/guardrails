@@ -12,14 +12,14 @@ pre-commit framework, or no other hook system at all.
 Universal checks only — the kind every repo benefits from, none of which
 duplicate what the repo's own tooling does:
 
-| Hook | Check | Tool |
-|---|---|---|
-| `pre-commit` | secrets | [gitleaks](https://github.com/gitleaks/gitleaks) (user-owned baseline; repo cannot weaken via `.gitleaks.toml`) |
-| `pre-commit` | workflow lint | [actionlint](https://github.com/rhysd/actionlint) (only on `.github/workflows/*.yml`) |
-| `pre-commit` | large files | `git cat-file -s` on staged blobs (>5MB; closes staged-blob-vs-worktree bypass) |
-| `commit-msg` | message format | [commitlint](https://commitlint.js.org/) with `@commitlint/config-conventional` |
-| `pre-push` | branch protection | bash — refuses direct pushes to `main`/`master`/`trunk`/`release/*` (configurable; also reads `protected_refs` from wt config when in a wt-managed repo) |
-| `pre-push` | code quality | [fallow](https://github.com/fallow-rs/fallow) on JS/TS repos |
+| Hook | Command | Skip env | Rationale |
+|---|---|---|---|
+| `pre-push` | `branch-guard` | `SKIP_BRANCH_GUARD` | Block pushes to protected refs (`main`, `master`, `prod*`) |
+| `pre-commit` | `large-files` | `SKIP_LARGE_FILES` | Refuse staged blobs over `MAX_BLOB_SIZE` |
+| `pre-commit` | `gitleaks` | `SKIP_GITLEAKS` | Detect secrets in staged changes |
+| `pre-commit` | `actionlint` | `SKIP_ACTIONLINT` | Validate `.github/workflows` YAML |
+| `commit-msg` | `commitlint` | `SKIP_COMMITLINT` | Enforce Conventional Commits format |
+| `pre-push` | `fallow` | `SKIP_FALLOW` | Run universal code-health gate for JS/TS |
 
 Deliberately NOT in scope: `eslint`, `prettier`, `ruff`, `biome`, `tsc`,
 `mypy`, project tests. Those belong to each repo's own CI.

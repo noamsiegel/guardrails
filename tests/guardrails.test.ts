@@ -453,6 +453,86 @@ describe('Doctor handles worktrees correctly', () => {
   });
 });
 
+describe('universal checks registry', () => {
+  type RegistryEntry = {
+    hook: string;
+    command: string;
+    skipEnv: string;
+    requiredTools: string;
+    rationale: string;
+  };
+
+  function registryEntries(): RegistryEntry[] {
+    const r = run('bash', ['-c', 'source checks/registry.sh; printf "%s\\n" "${GUARDRAILS_CHECKS[@]}"'], { cwd: REPO_ROOT });
+    expect(r.status).toBe(0);
+    return r.stdout.trim().split('\n').filter(Boolean).map((line) => {
+      const fields = line.split('|');
+      expect(fields.length, line).toBe(5);
+      const [hook, command, skipEnv, requiredTools, rationale] = fields;
+      return { hook, command, skipEnv, requiredTools, rationale };
+    });
+  }
+
+  function registryTools(arrayName: 'GUARDRAILS_REQUIRED_TOOLS' | 'GUARDRAILS_OPTIONAL_TOOLS'): string[] {
+    const r = run('bash', ['-c', `source checks/registry.sh; printf "%s\\n" "\${${arrayName}[@]}"`], { cwd: REPO_ROOT });
+    expect(r.status).toBe(0);
+    return r.stdout.trim().split('\n').filter(Boolean);
+  }
+
+  test('registry loads cleanly', () => {
+    const r = run('bash', ['-c', 'source checks/registry.sh; declare -p GUARDRAILS_CHECKS'], { cwd: REPO_ROOT });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('GUARDRAILS_CHECKS');
+  });
+
+  test('every registry entry has five non-empty fields', () => {
+    for (const entry of registryEntries()) {
+      expect(entry.hook).toMatch(/^(pre-commit|commit-msg|pre-push)$/);
+      expect(entry.command.length).toBeGreaterThan(0);
+      expect(entry.skipEnv).toMatch(/^SKIP_[A-Z0-9_]+$/);
+      expect(entry.requiredTools.length).toBeGreaterThan(0);
+      expect(entry.rationale.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('lefthook skip env surface matches registry', () => {
+    const lefthook = readFileSync(join(REPO_ROOT, 'lefthook.yml'), 'utf8');
+    const registrySkipEnvs = new Set(registryEntries().map((entry) => entry.skipEnv));
+    const lefthookSkipEnvs = new Set([...lefthook.matchAll(/SKIP_[A-Z0-9_]+/g)].map((match) => match[0]));
+
+    for (const skipEnv of registrySkipEnvs) {
+      expect(lefthookSkipEnvs.has(skipEnv), `${skipEnv} missing from lefthook.yml`).toBe(true);
+    }
+    for (const skipEnv of lefthookSkipEnvs) {
+      if (skipEnv === 'SKIP_PERSONAL_HOOKS' || skipEnv === 'SKIP_<CHECK>') continue;
+      expect(registrySkipEnvs.has(skipEnv), `${skipEnv} not present in registry`).toBe(true);
+    }
+  });
+
+  test('required registry tools are reachable in CI', () => {
+    for (const tool of registryTools('GUARDRAILS_REQUIRED_TOOLS')) {
+      const r = run('bash', ['-c', `source "${GUARDRAILS}"; have "$1"`, 'bash', tool], {
+        cwd: REPO_ROOT,
+        env: testEnv(mkdtempSync(join(tmpdir(), 'guardrails-xdg-'))),
+      });
+      expect(r.status, tool).toBe(0);
+    }
+  });
+
+  test('doctor reachability output matches registry tool list', () => {
+    const repo = newBareRepo();
+    try {
+      const r = run(GUARDRAILS, ['doctor'], { cwd: repo, env: envForRepo(repo) });
+      expect(r.status).toBe(0);
+      for (const tool of [...registryTools('GUARDRAILS_REQUIRED_TOOLS'), ...registryTools('GUARDRAILS_OPTIONAL_TOOLS')]) {
+        expect(r.stdout, tool).toContain(`${tool} reachable`);
+      }
+    } finally {
+      cleanup(repo);
+    }
+  });
+});
+
 
 describe('hook classifier', () => {
   let repo: string;
@@ -574,7 +654,7 @@ echo unreachable`], {
   test('bypass-help emits a single pastable shell line', () => {
     const r = compose('pre-commit', 'bypass-help');
     expect(r.status).toBe(0);
-    expect(r.stdout.trim()).toBe('SKIP_PERSONAL_HOOKS=1 guardrails run pre-commit "$@" || true');
+    expect(r.stdout.trim()).toBe('SKIP_LARGE_FILES=1 SKIP_GITLEAKS=1 SKIP_ACTIONLINT=1 guardrails run pre-commit "$@" || true');
     expect(r.stdout.trim()).not.toContain('\n');
     expect(run('bash', ['-n'], { input: r.stdout }).status).toBe(0);
   });
