@@ -435,6 +435,29 @@ describe('Lifecycle commands', () => {
     }
   });
 
+  test('doctor --all bypass guidance emits blocking compose snippet', () => {
+    const scanRoot = mkdtempSync(join(tmpdir(), 'git-guardrails-bypass-'));
+    try {
+      const bypassRepo = join(scanRoot, 'bypass');
+      const configHome = join(scanRoot, 'xdg');
+      mkdirSync(join(bypassRepo, '.custom-hooks'), { recursive: true });
+      mkdirSync(configHome, { recursive: true });
+      git(bypassRepo, 'init', '-q', '-b', 'main');
+      git(bypassRepo, 'config', 'user.email', 'test@example.com');
+      git(bypassRepo, 'config', 'user.name', 'git-guardrails-test');
+      git(bypassRepo, 'config', '--local', 'core.hooksPath', '.custom-hooks');
+
+      const r = run(GIT_GUARDRAILS, ['doctor', '--all', '--root', scanRoot], { env: testEnv(configHome) });
+
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain('bypass-other');
+      expect(r.stdout).toContain('git-guardrails run <hook> "$@" || exit $?');
+      expect(r.stdout).not.toContain('git-guardrails run <hook> "$@" || true');
+    } finally {
+      cleanup(scanRoot);
+    }
+  });
+
   test('global-template generate writes init template and configures git', () => {
     repo = newBareRepo();
     const home = mkdtempSync(join(tmpdir(), 'git-guardrails-home-'));
@@ -711,6 +734,16 @@ echo unreachable`], {
     expect(r.stdout.trim()).toBe('SKIP_LARGE_FILES=1 SKIP_GITLEAKS=1 SKIP_ACTIONLINT=1 git-guardrails run pre-commit "$@" || true');
     expect(r.stdout.trim()).not.toContain('\n');
     expect(run('bash', ['-n'], { input: r.stdout }).status).toBe(0);
+  });
+
+  test('documentation uses canonical embedded shell snippets', () => {
+    const readme = readFileSync(join(REPO_ROOT, 'README.md'), 'utf8');
+    const perRepoHooks = readFileSync(join(REPO_ROOT, 'docs/PER_REPO_HOOKS.md'), 'utf8');
+    for (const hook of ['pre-commit', 'pre-push']) {
+      const snippet = compose(hook, 'embedded').stdout.trim();
+      expect(readme).toContain(snippet);
+      expect(perRepoHooks).toContain(snippet);
+    }
   });
 
   test('invalid compose mode returns non-zero', () => {

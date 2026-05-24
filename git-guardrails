@@ -616,8 +616,8 @@ cmd_doctor_all() {
       local hp; hp=$(git -C "$r" config --local --get core.hooksPath 2>/dev/null || git -C "$r" config --global --get core.hooksPath 2>/dev/null || true)
       printf '  ✗ %s   (hooksPath: %s)\n' "${r#$root/}" "$hp"
     done
-    printf '  fix: in each, add this near the top of the existing hook script:\n'
-    _compose_snippet '<hook>' bypass-help | while IFS= read -r line; do dim "    $line\n"; done
+    printf '  fix: in each, add this near the top of the existing hook script, replacing <hook> with pre-commit, pre-push, or commit-msg as appropriate:\n'
+    _compose_snippet '<hook>' embedded | while IFS= read -r line; do dim "    $line\n"; done
     printf '\n'
   fi
 

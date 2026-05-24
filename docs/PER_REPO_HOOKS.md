@@ -25,12 +25,16 @@ pre-push:
 ### Husky or raw hooks
 
 ```bash
+# git-guardrails compose: pre-commit
+# Preserves "$@" and stdin; exits non-zero if git-guardrails blocks.
 if command -v git-guardrails >/dev/null 2>&1; then
   git-guardrails run pre-commit "$@" || exit $?
 fi
 ```
 
 ```bash
+# git-guardrails compose: pre-push
+# Preserves "$@" and stdin; exits non-zero if git-guardrails blocks.
 if command -v git-guardrails >/dev/null 2>&1; then
   git-guardrails run pre-push "$@" || exit $?
 fi
