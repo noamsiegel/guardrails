@@ -28,6 +28,10 @@ interface SpawnResult {
   stderr: string;
 }
 
+function output(r: SpawnResult): string {
+  return `${r.stdout}\n${r.stderr}`.trim();
+}
+
 function run(cmd: string, args: string[], opts: SpawnSyncOptions = {}): SpawnResult {
   const r = spawnSync(cmd, args, { encoding: 'utf8', ...opts });
   return {
@@ -130,7 +134,7 @@ regexes = ['''.*''']
     writeFileSync(join(repo, 'leak.ts'), STRIPE_KEY_LIKE);
     git(repo, 'add', 'leak.ts');
     const r = git(repo, 'commit', '-m', 'feat: ok', { env: envForRepo(repo, { SKIP_GITLEAKS: '1' }) });
-    expect(r.status).toBe(0);
+    expect(r.status, output(r)).toBe(0);
   });
 });
 
@@ -182,7 +186,7 @@ describe('R7 — large-files inspects STAGED blob, not worktree', () => {
     writeFileSync(join(repo, 'allowed.bin'), Buffer.alloc(6 * 1024 * 1024));
     git(repo, 'add', 'allowed.bin');
     const allowedByEnv = git(repo, 'commit', '-m', 'feat: big', { env: envForRepo(repo, { LARGE_FILE_LIMIT_MB: '20' }) });
-    expect(allowedByEnv.status).toBe(0);
+    expect(allowedByEnv.status, output(allowedByEnv)).toBe(0);
 
     writeFileSync(join(repo, 'tiny.txt'), 'small');
     git(repo, 'add', 'tiny.txt');
@@ -289,7 +293,7 @@ describe('Conventional commits gating', () => {
     writeFileSync(join(repo, 'a.txt'), 'a');
     git(repo, 'add', 'a.txt');
     const clean = git(repo, 'commit', '-m', 'feat: clean commit message', { env: envForRepo(repo) });
-    expect(clean.status).toBe(0);
+    expect(clean.status, output(clean)).toBe(0);
 
     writeFileSync(join(repo, 'b.txt'), 'b');
     git(repo, 'add', 'b.txt');
