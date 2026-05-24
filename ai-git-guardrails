@@ -14,7 +14,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-AI_GIT_GUARDRAILS_VERSION="0.8.2"
+AI_GIT_GUARDRAILS_VERSION="0.8.3"
 AI_GIT_GUARDRAILS_API_VERSION="ai-git-guardrails.v0"
 AI_GIT_GUARDRAILS_RECORD_SEP=$'\x1f'
 LEGACY_GUARDRAILS_API_VERSION="guardrails.v0"
@@ -123,7 +123,26 @@ _repo_is_opted_out() {
   grep -Fxq "$canonical" "$AI_GIT_GUARDRAILS_OPT_OUT" 2>/dev/null
 }
 
-# Classify one hook file. Echoes: absent | ours | non-ours | shadowed | opt-out.
+# Classify one hook file. Echoes: absent | ours | ours-legacy | non-ours | shadowed | opt-out.
+_is_legacy_hook() {
+  local hook_file="$1"
+  [[ -f "$hook_file" ]] || return 1
+  grep -Eq '^# guardrails-managed:' "$hook_file" 2>/dev/null || return 1
+  grep -Eq '(^|[^[:alnum:]_-])guardrails([[:space:]]|$)' "$hook_file" 2>/dev/null
+}
+
+_warn_legacy_hooks_in_repo() {
+  local repo="$1" hooks_dir hook target
+  hooks_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+  hooks_dir="$hooks_dir/hooks"
+  for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
+    target="$hooks_dir/$hook"
+    if _is_legacy_hook "$target"; then
+      printf 'WARN: stale legacy hook detected in .git/hooks/%s. Run `ai-git-guardrails install --force` to migrate.\n' "$hook" >&2
+      return 0
+    fi
+  done
+}
 _classify_hook() {
   local hooks_dir="$1" hook="$2"
   local repo local_hp global_hp active_hp target
@@ -156,8 +175,12 @@ _classify_hook() {
   elif grep -Fq "$AI_GIT_GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
     echo "ours"
   # Backward-compat: existing installs used this ownership marker before the rename.
-  elif grep -Fq "$LEGACY_GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
-    echo "ours"
+  elif grep -Eq '^# guardrails-managed:' "$target" 2>/dev/null; then
+    if _is_legacy_hook "$target"; then
+      echo "ours-legacy"
+    else
+      echo "ours"
+    fi
   else
     echo "non-ours"
   fi
@@ -184,11 +207,12 @@ _classify_repo_hooks() {
 
 # Is the file at $1 owned by ai-git-guardrails?
 _is_ai_git_guardrails_hook() {
-  local hook_file="$1" hooks_dir hook
+  local hook_file="$1" hooks_dir hook state
   [[ -f "$hook_file" ]] || return 1
   hooks_dir=$(dirname "$hook_file")
   hook=$(basename "$hook_file")
-  [[ "$(_classify_hook "$hooks_dir" "$hook")" == "ours" ]]
+  state=$(_classify_hook "$hooks_dir" "$hook")
+  [[ "$state" == "ours" || "$state" == "ours-legacy" ]]
 }
 have() {
   command -v "$1" >/dev/null 2>&1
@@ -317,7 +341,7 @@ cmd_install() {
 
   mkdir -p "$hooks_dir"
 
-  local installed=0 skipped=0 conflicted=0
+  local installed=0 skipped=0 conflicted=0 migrated=0
   for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
     # Honor --skip
     local skip=0
@@ -327,15 +351,17 @@ cmd_install() {
       continue
     fi
 
-    local target="$hooks_dir/$hook" state
+    local target="$hooks_dir/$hook" state tmp
     state=$(_classify_hook "$hooks_dir" "$hook")
     case "$state" in
-      ours)
+      ours|ours-legacy)
         # Re-install: re-generate to pick up latest version.
-        rm -f "$target"
-        _generate_shim "$hook" > "$target"
-        chmod +x "$target"
+        tmp=$(mktemp "$target.XXXXXX")
+        _generate_shim "$hook" > "$tmp"
+        chmod +x "$tmp"
+        mv "$tmp" "$target"
         installed=$((installed + 1))
+        [[ "$state" == "ours-legacy" ]] && migrated=$((migrated + 1))
         continue
         ;;
       non-ours)
@@ -346,10 +372,11 @@ cmd_install() {
         fi
         ;;
     esac
-    # Write via rm-then-create to never follow a symlink target.
-    rm -f "$target"
-    _generate_shim "$hook" > "$target"
-    chmod +x "$target"
+    # Write via temp-then-rename to avoid following an existing symlink target.
+    tmp=$(mktemp "$target.XXXXXX")
+    _generate_shim "$hook" > "$tmp"
+    chmod +x "$tmp"
+    mv "$tmp" "$target"
     installed=$((installed + 1))
   done
 
@@ -362,7 +389,7 @@ cmd_install() {
   fi
 
   green "installed "
-  printf '%d/%d hooks in %s\n' "$installed" "${#AI_GIT_GUARDRAILS_HOOKS[@]}" "$repo"
+  printf '%d/%d hooks (%d migrated from legacy) in %s\n' "$installed" "${#AI_GIT_GUARDRAILS_HOOKS[@]}" "$migrated" "$repo"
   (( skipped > 0 ))    && yellow "skipped: $skipped\n"
   (( conflicted > 0 )) && yellow "conflicts: $conflicted (use --force to override)\n"
   return 0
@@ -379,7 +406,7 @@ cmd_uninstall() {
     local target="$hooks_dir/$hook" state
     state=$(_classify_hook "$hooks_dir" "$hook")
     case "$state" in
-      ours)
+      ours|ours-legacy)
         rm -f "$target"
         removed=$((removed + 1))
         ;;
@@ -423,6 +450,9 @@ cmd_run() {
   repo=$(_repo_toplevel || true)
   if [[ -n "$repo" ]] && _repo_is_opted_out "$repo"; then
     exit 0
+  fi
+  if [[ -n "$repo" ]]; then
+    _warn_legacy_hooks_in_repo "$repo"
   fi
 
   # Defer to lefthook with our shipped config.
@@ -516,6 +546,7 @@ cmd_doctor() {
   local repo
   repo=$(_repo_toplevel 2>/dev/null || true)
   if [[ -n "$repo" ]]; then
+    _warn_legacy_hooks_in_repo "$repo"
     local record
     record=$(_audit_repo "$repo")
     _render_repo_audit_detail "$record"
@@ -549,6 +580,7 @@ _render_hook_detail() {
   printf '%-40s' "$hook"
   case "$owner" in
     ours) green "installed (ai-git-guardrails)\n" ;;
+    ours-legacy) yellow "installed (legacy guardrails shim)\n" ;;
     non-ours) yellow "present (not ours)\n" ;;
     shadowed) yellow "shadowed by core.hooksPath\n" ;;
     opt-out) dim "opt-out\n" ;;
@@ -670,7 +702,7 @@ _audit_repo() {
       commit-msg) commit_msg="$owner" ;;
     esac
     case "$owner" in
-      ours) any_ours=1 ;;
+      ours|ours-legacy) any_ours=1 ;;
       shadowed) any_shadowed=1 ;;
       opt-out) any_optout=1 ;;
     esac

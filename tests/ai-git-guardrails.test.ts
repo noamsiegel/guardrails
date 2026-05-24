@@ -375,6 +375,36 @@ describe('Lifecycle commands', () => {
     expect(git(repo, 'config', '--local', '--get', 'core.hooksPath').status).not.toBe(0);
   });
 
+  test('install migrates stale legacy hook shims', () => {
+    repo = newBareRepo();
+    const dir = hooksDir(repo);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'pre-push'), '#!/usr/bin/env bash\n# guardrails-managed: guardrails.v0\nexec guardrails run pre-push "$@"\n');
+    git(repo, 'config', '--local', 'core.hooksPath', dir);
+
+    const r = run(AI_GIT_GUARDRAILS, ['install'], { cwd: repo, env: envForRepo(repo) });
+    expect(r.status).toBe(0);
+    expect(r.stdout + r.stderr).toContain('1 migrated from legacy');
+
+    const hook = readFileSync(join(dir, 'pre-push'), 'utf8');
+    expect(hook).toContain('# ai-git-guardrails-managed: ai-git-guardrails.v0');
+    expect(hook).toContain('exec ai-git-guardrails run pre-push "$@"');
+    expect(hook).not.toContain('# guardrails-managed:');
+    expect(hook).not.toContain('exec guardrails run');
+  });
+
+  test('doctor warns once for stale legacy hook shims', () => {
+    repo = newBareRepo();
+    const dir = hooksDir(repo);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'pre-push'), '#!/usr/bin/env bash\n# guardrails-managed: guardrails.v0\nexec guardrails run pre-push "$@"\n');
+    git(repo, 'config', '--local', 'core.hooksPath', dir);
+
+    const r = run(AI_GIT_GUARDRAILS, ['doctor'], { cwd: repo, env: envForRepo(repo) });
+    expect(r.stderr).toContain('WARN: stale legacy hook detected in .git/hooks/pre-push. Run `ai-git-guardrails install --force` to migrate.');
+    expect((r.stderr.match(/stale legacy hook detected/g) ?? []).length).toBe(1);
+  });
+
   test('install --force replaces a conflicting hook', () => {
     repo = newBareRepo();
     const dir = hooksDir(repo);
@@ -647,9 +677,9 @@ describe('hook classifier', () => {
     expect(classify('pre-commit').stdout.trim()).toBe('non-ours');
   });
 
-  test('legacy marker is still ours for uninstall safety', () => {
+  test('legacy marker with old binary is classified as legacy ours', () => {
     writeFileSync(join(hooksDir(), 'pre-commit'), '#!/usr/bin/env bash\n# guardrails-managed: guardrails.v0\nexec guardrails run pre-commit "$@"\n');
-    expect(classify('pre-commit').stdout.trim()).toBe('ours');
+    expect(classify('pre-commit').stdout.trim()).toBe('ours-legacy');
   });
 
   test('opt-out', () => {

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.3] — legacy shim auto-migration
+
+### Fixed
+- `install` now detects stale v0.7-era hook shims with `# guardrails-managed:` markers that still invoke the old `guardrails` binary, rewrites them to canonical `ai-git-guardrails` standalone shims, and reports migrated hook count in the install summary.
+- `run` and `doctor` now warn once per invocation when a repo still has a stale legacy shim, pointing users to `ai-git-guardrails install --force` for migration.
+
 ## [0.8.2] — TSV separator hotfix + RELEASING.md
 
 ### Fixed
