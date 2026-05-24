@@ -407,7 +407,7 @@ cmd_run() {
   shift
 
   # Global bypass.
-  [[ "${SKIP_PERSONAL_HOOKS:-0}" == "1" ]] && exit 0
+  [[ "${GIT_GUARDRAILS_SKIP:-0}" == "1" ]] && exit 0
 
   # User-owned per-repo opt-out.
   local repo
@@ -745,7 +745,7 @@ config:
   $GIT_GUARDRAILS_TEMPLATES/checks/registry.sh   source of truth for what runs
 
 bypass:
-  SKIP_PERSONAL_HOOKS=1                skip all git-guardrails checks
+  GIT_GUARDRAILS_SKIP=1                skip all git-guardrails checks
   per-check SKIP_* env vars          skip one registry check
   ALLOW_PROTECTED_PUSH=1               one-time protected-branch override
   git commit --no-verify               nuclear (skips git-guardrails + repo hooks)

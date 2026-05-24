@@ -203,12 +203,19 @@ describe('Bypass envvar surface', () => {
   beforeEach(() => { repo = newRepo(); });
   afterEach(() => cleanup(repo));
 
-  test('SKIP_PERSONAL_HOOKS=1 skips git-guardrails entirely', () => {
+  test('GIT_GUARDRAILS_SKIP=1 skips git-guardrails entirely', () => {
     writeFileSync(join(repo, 'leak.ts'), STRIPE_KEY_LIKE);
     git(repo, 'add', 'leak.ts');
-    const r = git(repo, 'commit', '-m', 'bad msg', { env: envForRepo(repo, { SKIP_PERSONAL_HOOKS: '1' }) });
+    const r = git(repo, 'commit', '-m', 'bad msg', { env: envForRepo(repo, { GIT_GUARDRAILS_SKIP: '1' }) });
     // commitlint would normally block "bad msg" too, but it's also skipped.
     expect(r.status).toBe(0);
+  });
+
+  test('legacy SKIP_PERSONAL_HOOKS no longer skips git-guardrails', () => {
+    writeFileSync(join(repo, 'leak.ts'), STRIPE_KEY_LIKE);
+    git(repo, 'add', 'leak.ts');
+    const r = git(repo, 'commit', '-m', 'feat: ok', { env: envForRepo(repo, { SKIP_PERSONAL_HOOKS: '1' }) });
+    expect(r.status).not.toBe(0);
   });
 
   test('--no-verify bypasses everything (wt and git-guardrails)', () => {
@@ -569,7 +576,7 @@ describe('universal checks registry', () => {
       expect(lefthookSkipEnvs.has(skipEnv), `${skipEnv} missing from lefthook.yml`).toBe(true);
     }
     for (const skipEnv of lefthookSkipEnvs) {
-      if (skipEnv === 'SKIP_PERSONAL_HOOKS' || skipEnv === 'SKIP_<CHECK>') continue;
+      if (skipEnv === 'SKIP_<CHECK>') continue;
       expect(registrySkipEnvs.has(skipEnv), `${skipEnv} not present in registry`).toBe(true);
     }
   });

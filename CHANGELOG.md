@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- Renamed the all-check bypass environment variable from `SKIP_PERSONAL_HOOKS` to `GIT_GUARDRAILS_SKIP` to match the clean `git-guardrails` public API.
+
 ## [v0.9.1]
 
 ### Changed

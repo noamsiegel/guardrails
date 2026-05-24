@@ -20,7 +20,7 @@
 #   - fallow -> SKIP_FALLOW
 #
 # Bypass:
-#   - SKIP_PERSONAL_HOOKS=1 git commit          (skip everything)
+#   - GIT_GUARDRAILS_SKIP=1 git commit          (skip everything)
 #   - SKIP_<CHECK>=1 git commit                  (per-check skip)
 #   - Repo path in $GIT_GUARDRAILS_TEMPLATES/.opt-out    (user-owned per-repo opt-out)
 #   - git commit --no-verify                     (nuclear; skips repo hooks too)

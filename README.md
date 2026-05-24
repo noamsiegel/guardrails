@@ -102,7 +102,7 @@ fi
 | Allow push to protected branch once | `ALLOW_PROTECTED_PUSH=1 git push ...` |
 | Raise large-file threshold | `LARGE_FILE_LIMIT_MB=20 git commit ...` |
 | Pin fallow to a different version | `FALLOW_VERSION=2.45.0 git push ...` |
-| Skip all git-guardrails checks for one invocation | `SKIP_PERSONAL_HOOKS=1 git commit ...` |
+| Skip all git-guardrails checks for one invocation | `GIT_GUARDRAILS_SKIP=1 git commit ...` |
 | Opt out a repo permanently | Add canonical path to `~/.config/git-guardrails/.opt-out`, one per line |
 | Override PATH for non-standard tool locations | Drop `~/.config/git-guardrails/init.sh` to extend `PATH` (asdf/mise/nvm) |
 | Skip everything (git-guardrails AND repo hooks) | `git commit --no-verify` / `git push --no-verify` |
