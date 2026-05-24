@@ -17,8 +17,11 @@ jobs:
 
       - name: Install hook tools
         # Runtime dependencies the binary expects + tools the bun:test
-        # fixtures shell out to.
-        run: brew install lefthook gitleaks actionlint
+        # fixtures shell out to. commitlint is installed through Bun because
+        # Homebrew does not ship @commitlint/cli.
+        run: |
+          brew install lefthook gitleaks actionlint
+          bun install -g @commitlint/cli @commitlint/config-conventional
 
       - name: Lint shell scripts
         run: |
