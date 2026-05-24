@@ -47,12 +47,16 @@ function git(repo: string, ...args: Array<string | SpawnSyncOptions>): SpawnResu
 }
 
 function testEnv(configHome: string): NodeJS.ProcessEnv {
+  const globalNodePaths = [
+    `${process.env.HOME}/.bun/install/global/node_modules`,
+    `${process.env.HOME}/.local/share/bun/install/global/node_modules`,
+  ];
   return {
     ...process.env,
     AI_GIT_GUARDRAILS_TEMPLATES: REPO_ROOT,
     XDG_CONFIG_HOME: configHome,
     PATH: `${REPO_ROOT}:${process.env.PATH ?? ''}`,
-    NODE_PATH: `${process.env.HOME}/.local/share/bun/install/global/node_modules${process.env.NODE_PATH ? `:${process.env.NODE_PATH}` : ''}`,
+    NODE_PATH: `${globalNodePaths.join(':')}${process.env.NODE_PATH ? `:${process.env.NODE_PATH}` : ''}`,
   };
 }
 
