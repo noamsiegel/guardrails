@@ -48,6 +48,7 @@ function git(repo: string, ...args: Array<string | SpawnSyncOptions>): SpawnResu
 
 function testEnv(configHome: string): NodeJS.ProcessEnv {
   const globalNodePaths = [
+    `${REPO_ROOT}/node_modules`,
     `${process.env.HOME}/.bun/install/global/node_modules`,
     `${process.env.HOME}/.local/share/bun/install/global/node_modules`,
   ];

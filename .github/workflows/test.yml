@@ -17,12 +17,12 @@ jobs:
 
       - name: Install hook tools
         # Runtime dependencies the binary expects + tools the bun:test
-        # fixtures shell out to. commitlint is installed through Bun because
-        # Homebrew does not ship @commitlint/cli.
+        # fixtures shell out to. commitlint is installed into this checkout so
+        # commitlint.config.cjs can resolve @commitlint/config-conventional.
         run: |
           brew install lefthook gitleaks actionlint
-          bun install -g @commitlint/cli @commitlint/config-conventional
-          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          bun add --dev @commitlint/cli @commitlint/config-conventional
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Verify hook tools are reachable
         run: |
