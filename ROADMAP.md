@@ -13,8 +13,8 @@ structural issues (ordered by leverage):
 2. **`doctor --all` duplicates `doctor`** logic with a coarser classifier — invites drift where current-repo doctor says `present (not ours)` while `--all` buckets the same repo as `bypass`.
 3. **Stale legacy personal-hooks references** in `lefthook.yml`, `tests/git-guardrails.test.ts`, and `tests/git-guardrails.test.ts:303-310` (which shells out to the renamed PAI doctor path that no longer exists).
 4. **Compose-shim contract scattered** — `_generate_shim`, install help text, doctor `--all` bypass help, and the wt global hook bridge all emit slightly different paste-snippets with different `"$@"` / stdin / abort semantics.
-5. **Universals-only boundary is prose-only** — README + lefthook.yml + `cmd_doctor` tool list duplicate the same set of checks; no single registry.
-6. **Tests over-cover checks, under-cover lifecycle** — 8 branch-guard cases, near-zero coverage of install/uninstall/migrate/global-template.
+5. **Curated-check boundary is prose-only** — README + lefthook.yml + `cmd_doctor` tool list duplicate the same set of checks; no single registry.
+6. **Tests over-cover checks, under-cover lifecycle** — 8 branch-guard cases, near-zero coverage of install/uninstall/global-template.
 
 ## Target architecture
 
@@ -24,7 +24,7 @@ structural issues (ordered by leverage):
 _classify_hook <hooks_dir> <hook>  → one of: absent | ours | non-ours | shadowed | opt-out
 _classify_repo_hooks <repo>        → TSV: hook owner path hooksPath opt-out
 _compose_snippet <hook> <mode>     → canonical paste shim (one source of truth)
-_universal_check_registry          → tiny data file consumed by lefthook + doctor + README
+_curated_check_registry            → tiny data file consumed by lefthook + doctor + README
 ```
 
 ### Adapter layer
@@ -35,7 +35,7 @@ _universal_check_registry          → tiny data file consumed by lefthook + doc
 
 ### CLI layer
 
-`cmd_install` / `cmd_uninstall` / `cmd_doctor` / `cmd_doctor_all` / `cmd_migrate`
+`cmd_install` / `cmd_uninstall` / `cmd_doctor` / `cmd_doctor_all`
 all consume classifier records and render. `doctor --all` is
 `for repo in $(_find_git_repos); do _classify_repo_hooks "$repo"; done`
 with a summary renderer over the same data.
@@ -47,9 +47,7 @@ with a summary renderer over the same data.
 **Goals**
 
 Part A (mechanical):
-- Remove legacy personal-hooks defaults from `lefthook.yml` (legacy stays only in `cmd_migrate` README section).
 - Fix `tests/git-guardrails.test.ts:303-310` to call `git-guardrails doctor --all` instead of the renamed PAI path.
-- Update legacy test fixtures to use `XDG_CONFIG_HOME` + temp dirs, not legacy personal-hooks state.
 
 Part B (foundation):
 - Introduce `_classify_hook` and `_classify_repo_hooks` returning stable state words.
@@ -71,7 +69,7 @@ Part B (foundation):
 
 **Goals**
 - `_audit_repo` returns a structured record; both `cmd_doctor` and `cmd_doctor_all` render from it.
-- Rebalance tests: collapse redundant branch-guard cases into table tests; add install/uninstall/migrate/global-template lifecycle fixtures.
+- Rebalance tests: collapse redundant branch-guard cases into table tests; add install/uninstall/global-template lifecycle fixtures.
 
 **Acceptance**
 - Per-repo doctor and `doctor --all` always agree on classification for the same repo.
@@ -95,14 +93,13 @@ Part B (foundation):
 - `cmd_doctor` tool reachability list and lefthook.yml comments generated from / cross-checked against it.
 
 **Acceptance**
-- Adding/removing a universal check is one registry edit.
+- Adding/removing a curated check is one registry edit.
 - Test asserts every skip env in registry exists in lefthook config (no orphans).
 
 ## Non-goals
 
-- **No per-repo lint/format/typecheck.** The universals-only boundary IS the product.
+- **No project-specific test suites or plugin-defined checks.** The curated baseline remains the product.
 - **No plugin system inside guardrails.** git-guardrails IS a plugin into other hook orchestrators (the compose-shim).
-- **No migration of legacy hooks framework** beyond what `cmd_migrate` does today.
 
 ## Open questions
 

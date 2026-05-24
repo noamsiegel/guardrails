@@ -6,7 +6,6 @@
 #   uninstall                              remove git-guardrails-managed hooks
 #   run <hook>                             execute the named hook (invoked by installed shims)
 #   doctor                                 self-check + tool reachability + enrolled-repos audit
-#   migrate [--apply]                      migrate from legacy global-hooksPath install
 #   --global-template                      configure git init.templateDir for auto-install on new clones
 #   --version | -V                         print version
 #
@@ -16,9 +15,7 @@ IFS=$'\n\t'
 
 GIT_GUARDRAILS_VERSION="0.9.0"
 GIT_GUARDRAILS_API_VERSION="git-guardrails.v0"
-LEGACY_AI_GIT_GUARDRAILS_API_VERSION="ai-git-guardrails.v0"
 GIT_GUARDRAILS_RECORD_SEP=$'\x1f'
-LEGACY_GUARDRAILS_API_VERSION="guardrails.v0"
 
 # Resolve install dir. When run from brew, GIT_GUARDRAILS_HOME points at pkgshare.
 # When run from a local checkout (dev), it points at the repo root.
@@ -32,10 +29,10 @@ GIT_GUARDRAILS_SELF_DIR=$(_resolve_self_dir)
 # Where this git-guardrails install reads its templates from.
 # Homebrew install: /opt/homebrew/share/git-guardrails/
 # Local dev:        same dir as the binary
-GIT_GUARDRAILS_TEMPLATES="${GIT_GUARDRAILS_TEMPLATES:-${AI_GIT_GUARDRAILS_TEMPLATES:-${GUARDRAILS_TEMPLATES:-$GIT_GUARDRAILS_SELF_DIR}}}"
+GIT_GUARDRAILS_TEMPLATES="${GIT_GUARDRAILS_TEMPLATES:-$GIT_GUARDRAILS_SELF_DIR}"
 if [[ ! -f "$GIT_GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then
   # brew share layout
-  for candidate in "/opt/homebrew/share/git-guardrails" "/usr/local/share/git-guardrails" "$GIT_GUARDRAILS_SELF_DIR/../share/git-guardrails" "/opt/homebrew/share/ai-git-guardrails" "/usr/local/share/ai-git-guardrails" "$GIT_GUARDRAILS_SELF_DIR/../share/ai-git-guardrails" "/opt/homebrew/share/guardrails" "/usr/local/share/guardrails" "$GIT_GUARDRAILS_SELF_DIR/../share/guardrails"; do
+  for candidate in "/opt/homebrew/share/git-guardrails" "/usr/local/share/git-guardrails" "$GIT_GUARDRAILS_SELF_DIR/../share/git-guardrails"; do
     if [[ -f "$candidate/lefthook.yml" ]]; then
       GIT_GUARDRAILS_TEMPLATES="$candidate"
       break
@@ -52,25 +49,10 @@ fi
 
 
 GIT_GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/git-guardrails"
-LEGACY_AI_GIT_GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ai-git-guardrails"
-LEGACY_GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/guardrails"
-if [[ ! -d "$GIT_GUARDRAILS_CONFIG_DIR" && -d "$LEGACY_AI_GIT_GUARDRAILS_CONFIG_DIR" ]]; then
-  if [[ "${1:-}" != "--version" && "${1:-}" != "-V" && "${1:-}" != "--help" && "${1:-}" != "-h" && "${1:-}" != "help" && -n "${1:-}" ]]; then
-    printf '%s\n' "WARN: using legacy config dir $LEGACY_AI_GIT_GUARDRAILS_CONFIG_DIR; move it to $GIT_GUARDRAILS_CONFIG_DIR" >&2
-  fi
-  GIT_GUARDRAILS_CONFIG_DIR="$LEGACY_AI_GIT_GUARDRAILS_CONFIG_DIR"
-elif [[ ! -d "$GIT_GUARDRAILS_CONFIG_DIR" && -d "$LEGACY_GUARDRAILS_CONFIG_DIR" ]]; then
-  if [[ "${1:-}" != "--version" && "${1:-}" != "-V" && "${1:-}" != "--help" && "${1:-}" != "-h" && "${1:-}" != "help" && -n "${1:-}" ]]; then
-    printf '%s\n' "WARN: using legacy config dir $LEGACY_GUARDRAILS_CONFIG_DIR; move it to $GIT_GUARDRAILS_CONFIG_DIR" >&2
-  fi
-  GIT_GUARDRAILS_CONFIG_DIR="$LEGACY_GUARDRAILS_CONFIG_DIR"
-fi
 GIT_GUARDRAILS_OPT_OUT="$GIT_GUARDRAILS_CONFIG_DIR/.opt-out"
 
 # Marker line inserted into installed hooks so we can identify ours.
 GIT_GUARDRAILS_HOOK_MARKER="# git-guardrails-managed: $GIT_GUARDRAILS_API_VERSION"
-LEGACY_AI_GIT_GUARDRAILS_HOOK_MARKER="# ai-git-guardrails-managed: $LEGACY_AI_GIT_GUARDRAILS_API_VERSION"
-LEGACY_GUARDRAILS_HOOK_MARKER="# guardrails-managed: $LEGACY_GUARDRAILS_API_VERSION"
 
 # Hooks we own.
 GIT_GUARDRAILS_HOOKS=(pre-commit pre-push commit-msg)
@@ -131,30 +113,7 @@ _repo_is_opted_out() {
   grep -Fxq "$canonical" "$GIT_GUARDRAILS_OPT_OUT" 2>/dev/null
 }
 
-# Classify one hook file. Echoes: absent | ours | ours-legacy | non-ours | shadowed | opt-out.
-_is_legacy_hook() {
-  local hook_file="$1"
-  [[ -f "$hook_file" ]] || return 1
-  if grep -Eq '^# ai-git-guardrails-managed:' "$hook_file" 2>/dev/null; then
-    grep -Eq '(^|[^[:alnum:]_-])ai-git-guardrails([[:space:]]|$)' "$hook_file" 2>/dev/null
-    return $?
-  fi
-  grep -Eq '^# guardrails-managed:' "$hook_file" 2>/dev/null || return 1
-  grep -Eq '(^|[^[:alnum:]_-])guardrails([[:space:]]|$)' "$hook_file" 2>/dev/null
-}
-
-_warn_legacy_hooks_in_repo() {
-  local repo="$1" hooks_dir hook target
-  hooks_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
-  hooks_dir="$hooks_dir/hooks"
-  for hook in "${GIT_GUARDRAILS_HOOKS[@]}"; do
-    target="$hooks_dir/$hook"
-    if _is_legacy_hook "$target"; then
-      printf 'WARN: stale legacy hook detected in .git/hooks/%s. Run `git-guardrails install --force` to migrate.\n' "$hook" >&2
-      return 0
-    fi
-  done
-}
+# Classify one hook file. Echoes: absent | ours | non-ours | shadowed | opt-out.
 _classify_hook() {
   local hooks_dir="$1" hook="$2"
   local repo local_hp global_hp active_hp target
@@ -186,15 +145,6 @@ _classify_hook() {
     echo "absent"
   elif grep -Fq "$GIT_GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
     echo "ours"
-  # Backward-compat: existing installs used this ownership marker before the rename.
-  elif grep -Fq "$LEGACY_AI_GIT_GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
-    echo "ours-legacy"
-  elif grep -Eq '^# guardrails-managed:' "$target" 2>/dev/null; then
-    if _is_legacy_hook "$target"; then
-      echo "ours-legacy"
-    else
-      echo "ours"
-    fi
   else
     echo "non-ours"
   fi
@@ -226,10 +176,9 @@ _is_git_guardrails_hook() {
   hooks_dir=$(dirname "$hook_file")
   hook=$(basename "$hook_file")
   state=$(_classify_hook "$hooks_dir" "$hook")
-  [[ "$state" == "ours" || "$state" == "ours-legacy" ]]
+  [[ "$state" == "ours" ]]
 }
 
-_is_ai_git_guardrails_hook() { _is_git_guardrails_hook "$@"; }
 have() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -357,7 +306,7 @@ cmd_install() {
 
   mkdir -p "$hooks_dir"
 
-  local installed=0 skipped=0 conflicted=0 migrated=0
+  local installed=0 skipped=0 conflicted=0
   for hook in "${GIT_GUARDRAILS_HOOKS[@]}"; do
     # Honor --skip
     local skip=0
@@ -370,14 +319,13 @@ cmd_install() {
     local target="$hooks_dir/$hook" state tmp
     state=$(_classify_hook "$hooks_dir" "$hook")
     case "$state" in
-      ours|ours-legacy)
+      ours)
         # Re-install: re-generate to pick up latest version.
         tmp=$(mktemp "$target.XXXXXX")
         _generate_shim "$hook" > "$tmp"
         chmod +x "$tmp"
         mv "$tmp" "$target"
         installed=$((installed + 1))
-        [[ "$state" == "ours-legacy" ]] && migrated=$((migrated + 1))
         continue
         ;;
       non-ours)
@@ -405,7 +353,7 @@ cmd_install() {
   fi
 
   green "installed "
-  printf '%d/%d hooks (%d migrated from legacy) in %s\n' "$installed" "${#GIT_GUARDRAILS_HOOKS[@]}" "$migrated" "$repo"
+  printf '%d/%d hooks in %s\n' "$installed" "${#GIT_GUARDRAILS_HOOKS[@]}" "$repo"
   (( skipped > 0 ))    && yellow "skipped: $skipped\n"
   (( conflicted > 0 )) && yellow "conflicts: $conflicted (use --force to override)\n"
   return 0
@@ -422,7 +370,7 @@ cmd_uninstall() {
     local target="$hooks_dir/$hook" state
     state=$(_classify_hook "$hooks_dir" "$hook")
     case "$state" in
-      ours|ours-legacy)
+      ours)
         rm -f "$target"
         removed=$((removed + 1))
         ;;
@@ -467,10 +415,6 @@ cmd_run() {
   if [[ -n "$repo" ]] && _repo_is_opted_out "$repo"; then
     exit 0
   fi
-  if [[ -n "$repo" ]]; then
-    _warn_legacy_hooks_in_repo "$repo"
-  fi
-
   # Defer to lefthook with our shipped config.
   local config="$GIT_GUARDRAILS_TEMPLATES/lefthook.yml"
   [[ -f "$config" ]] || die 40 "git-guardrails lefthook.yml not found at $config"
@@ -480,13 +424,10 @@ cmd_run() {
   [[ -r "$user_init" ]] && . "$user_init"
 
   # PATH sanitization (defense against hijack).
-  export PATH="${GIT_GUARDRAILS_PATH:-${AI_GIT_GUARDRAILS_PATH:-${GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}}}"
+  export PATH="${GIT_GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}"
 
   # Make template path visible to lefthook config.
   export GIT_GUARDRAILS_TEMPLATES="$GIT_GUARDRAILS_TEMPLATES"
-  # Backward-compat: older templates and user hooks may still read AI_GIT_GUARDRAILS_TEMPLATES or GUARDRAILS_TEMPLATES.
-  export AI_GIT_GUARDRAILS_TEMPLATES="${AI_GIT_GUARDRAILS_TEMPLATES:-$GIT_GUARDRAILS_TEMPLATES}"
-  export GUARDRAILS_TEMPLATES="${GUARDRAILS_TEMPLATES:-$GIT_GUARDRAILS_TEMPLATES}"
 
   case "$hook" in
     commit-msg)
@@ -563,7 +504,6 @@ cmd_doctor() {
   local repo
   repo=$(_repo_toplevel 2>/dev/null || true)
   if [[ -n "$repo" ]]; then
-    _warn_legacy_hooks_in_repo "$repo"
     local record
     record=$(_audit_repo "$repo")
     _render_repo_audit_detail "$record"
@@ -597,7 +537,6 @@ _render_hook_detail() {
   printf '%-40s' "$hook"
   case "$owner" in
     ours) green "installed (git-guardrails)\n" ;;
-    ours-legacy) yellow "installed (legacy guardrails shim)\n" ;;
     non-ours) yellow "present (not ours)\n" ;;
     shadowed) yellow "shadowed by core.hooksPath\n" ;;
     opt-out) dim "opt-out\n" ;;
@@ -719,7 +658,7 @@ _audit_repo() {
       commit-msg) commit_msg="$owner" ;;
     esac
     case "$owner" in
-      ours|ours-legacy) any_ours=1 ;;
+      ours) any_ours=1 ;;
       shadowed) any_shadowed=1 ;;
       opt-out) any_optout=1 ;;
     esac
@@ -767,71 +706,6 @@ cmd_global_template() {
   info "→ undo: git config --global --unset init.templateDir"
 }
 
-cmd_migrate() {
-  local apply=0
-  while (($#)); do
-    case "$1" in
-      --apply) apply=1; shift ;;
-      *) die 10 "unknown flag: $1" ;;
-    esac
-  done
-
-  local legacy="$HOME/.git-hooks-personal"
-  if [[ ! -d "$legacy" ]]; then
-    green "no legacy install found "
-    printf 'nothing to migrate\n'
-    return 0
-  fi
-
-  info "→ legacy install detected at $legacy"
-  info ""
-
-  # Find repos enrolled via global core.hooksPath = $legacy
-  local global_hp; global_hp=$(_repo_global_hookspath)
-  if [[ "$global_hp" == "$legacy" ]]; then
-    info "→ global core.hooksPath currently points at $legacy"
-    info "  this will be unset (binary install puts git-guardrails on PATH)"
-  fi
-
-  # Find opt-out paths to preserve
-  local legacy_optout="$legacy/.opt-out"
-  if [[ -f "$legacy_optout" ]]; then
-    info "→ legacy .opt-out found:"
-    sed 's/^/     /' "$legacy_optout"
-  fi
-
-  if (( apply == 0 )); then
-    info ""
-    yellow "DRY RUN — re-run with --apply to perform the migration.\n"
-    info "What would happen:"
-    info "  1. Unset global core.hooksPath (if it points at $legacy)"
-    info "  2. Copy $legacy/.opt-out to $GIT_GUARDRAILS_OPT_OUT (if present)"
-    info "  3. Print a list of repos to run \`git-guardrails install\` in"
-    info "  4. NOT delete $legacy (you do that manually after verifying)"
-    return 0
-  fi
-
-  # Apply.
-  if [[ "$global_hp" == "$legacy" ]]; then
-    git config --global --unset core.hooksPath
-    green "✓ unset global core.hooksPath\n"
-  fi
-
-  if [[ -f "$legacy_optout" ]]; then
-    mkdir -p "$GIT_GUARDRAILS_CONFIG_DIR"
-    cp "$legacy_optout" "$GIT_GUARDRAILS_OPT_OUT"
-    green "✓ migrated opt-out file to $GIT_GUARDRAILS_OPT_OUT\n"
-  fi
-
-  info ""
-  yellow "next: install git-guardrails per-repo in any repo you want covered.\n"
-  info "for each repo:"
-  info "  cd <repo> && git-guardrails install"
-  info ""
-  info "when you've verified the new install works:"
-  info "  rm -rf $legacy"
-}
-
 # ---------- dispatch ----------
 main() {
   local sub="${1:-}"
@@ -841,7 +715,6 @@ main() {
     uninstall)      cmd_uninstall "$@" ;;
     run)            cmd_run "$@" ;;
     doctor)         cmd_doctor "$@" ;;
-    migrate)        cmd_migrate "$@" ;;
     --global-template|global-template) cmd_global_template "$@" ;;
     --version|-V)   cmd_version ;;
     -h|--help|help|"") cmd_help ;;
@@ -862,7 +735,6 @@ EOF
   printf '  git-guardrails %s <hook>              execute the named hook (invoked by installed shims)\n' run
   cat <<EOF
   git-guardrails doctor                  audit current repo + tool reachability
-  git-guardrails migrate [--apply]       migrate from legacy global-hooksPath install
   git-guardrails --global-template       configure git init.templateDir for auto-install on new clones
 
   git-guardrails --version | -V

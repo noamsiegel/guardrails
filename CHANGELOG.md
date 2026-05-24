@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Removed
+- Clean cutover to `git-guardrails` only: removed the `ai-git-guardrails` wrapper, old-name marker/env/config/template compatibility, stale legacy shim migration, and active migration docs/tests.
+
 ## [0.9.0] — git-guardrails rename
 
 ### Changed
