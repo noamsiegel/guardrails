@@ -1,6 +1,6 @@
-# Contributing to guardrails
+# Contributing to ai-git-guardrails
 
-Thanks for improving `guardrails`. This repo is a user-owned security and quality layer; keep changes portable, explicit, and hostile-repo-aware.
+Thanks for improving `ai-git-guardrails`. This repo is a user-owned security and quality layer; keep changes portable, explicit, and hostile-repo-aware.
 
 ## How to report a bug
 
@@ -12,7 +12,7 @@ Open a [feature request](./.github/ISSUE_TEMPLATE/feature.md) with the problem, 
 
 ## Development setup
 
-`guardrails` is a portable lefthook config plus bash helpers for cross-repo personal hooks.
+`ai-git-guardrails` is a portable lefthook config plus bash helpers for cross-repo personal hooks.
 
 Dependencies:
 
@@ -27,7 +27,7 @@ Use the local checkout as a hook fixture when possible; avoid weakening user-lev
 ## Running tests
 
 ```bash
-bun test tests/guardrails.test.ts
+bun test tests/ai-git-guardrails.test.ts
 ```
 
 ## Commit message format
@@ -41,7 +41,7 @@ feat: add doctor check for hook overrides
 
 ## Pull request checklist
 
-- [ ] Tests pass with `bun test tests/guardrails.test.ts`.
+- [ ] Tests pass with `bun test tests/ai-git-guardrails.test.ts`.
 - [ ] Lint/security checks are clean.
 - [ ] Documentation is updated when behavior changes.
 - [ ] `CHANGELOG.md` is updated for user-visible changes.

@@ -6,7 +6,7 @@ labels: [enhancement]
 
 ## Problem statement
 
-What problem should `guardrails` solve?
+What problem should `ai-git-guardrails` solve?
 
 ## Proposed solution
 

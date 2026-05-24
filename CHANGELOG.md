@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] — ai-git-guardrails rename
+
+### Breaking
+- CLI binary is now `ai-git-guardrails`; generated hooks now call `ai-git-guardrails run <hook>`.
+- Fresh installs use marker `# ai-git-guardrails-managed: ai-git-guardrails.v0`, config dir `~/.config/ai-git-guardrails/`, and `AI_GIT_GUARDRAILS_*` env vars.
+
+### Changed
+- Renamed in-repo source, tests, docs, workflow references, lefthook defaults, and registry variables from the old name to `ai-git-guardrails`.
+- `checks/registry.sh` now exports `AI_GIT_GUARDRAILS_CHECKS`, `AI_GIT_GUARDRAILS_REQUIRED_TOOLS`, and `AI_GIT_GUARDRAILS_OPTIONAL_TOOLS`.
+
+### Migration
+- Existing hooks with legacy marker `# guardrails-managed: guardrails.v0` are still classified as ours, so `ai-git-guardrails uninstall` can remove old installs safely instead of reporting non-ours conflicts.
+- `GUARDRAILS_TEMPLATES` and `GUARDRAILS_PATH` remain backward-compatible fallbacks when the new `AI_GIT_GUARDRAILS_*` env vars are absent.
+- If `~/.config/guardrails/` exists and `~/.config/ai-git-guardrails/` does not, the CLI reads the old config dir and warns to move it.
+
 ## [0.7.0] — universals registry
 
 ### Added

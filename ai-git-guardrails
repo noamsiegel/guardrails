@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# guardrails — personal git-hook quality layer.
+# ai-git-guardrails — personal git-hook quality layer.
 #
 # Subcommands:
 #   install [--force] [--skip <hook>]      install hooks into the current repo
-#   uninstall                              remove guardrails-managed hooks
+#   uninstall                              remove ai-git-guardrails-managed hooks
 #   run <hook>                             execute the named hook (invoked by installed shims)
 #   doctor                                 self-check + tool reachability + enrolled-repos audit
 #   migrate [--apply]                      migrate from legacy global-hooksPath install
@@ -14,48 +14,57 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-GUARDRAILS_VERSION="0.7.0"
-GUARDRAILS_API_VERSION="guardrails.v0"
+AI_GIT_GUARDRAILS_VERSION="0.8.0"
+AI_GIT_GUARDRAILS_API_VERSION="ai-git-guardrails.v0"
+LEGACY_GUARDRAILS_API_VERSION="guardrails.v0"
 
-# Resolve install dir. When run from brew, GUARDRAILS_HOME points at pkgshare.
+# Resolve install dir. When run from brew, AI_GIT_GUARDRAILS_HOME points at pkgshare.
 # When run from a local checkout (dev), it points at the repo root.
 _resolve_self_dir() {
   local self
   self=$(realpath "$0" 2>/dev/null || echo "$0")
   dirname "$self"
 }
-GUARDRAILS_SELF_DIR=$(_resolve_self_dir)
+AI_GIT_GUARDRAILS_SELF_DIR=$(_resolve_self_dir)
 
-# Where this guardrails install reads its templates from.
-# Homebrew install: /opt/homebrew/share/guardrails/
+# Where this ai-git-guardrails install reads its templates from.
+# Homebrew install: /opt/homebrew/share/ai-git-guardrails/
 # Local dev:        same dir as the binary
-GUARDRAILS_TEMPLATES="${GUARDRAILS_TEMPLATES:-$GUARDRAILS_SELF_DIR}"
-if [[ ! -f "$GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then
+AI_GIT_GUARDRAILS_TEMPLATES="${AI_GIT_GUARDRAILS_TEMPLATES:-${GUARDRAILS_TEMPLATES:-$AI_GIT_GUARDRAILS_SELF_DIR}}"
+if [[ ! -f "$AI_GIT_GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then
   # brew share layout
-  for candidate in "/opt/homebrew/share/guardrails" "/usr/local/share/guardrails" "$GUARDRAILS_SELF_DIR/../share/guardrails"; do
+  for candidate in "/opt/homebrew/share/ai-git-guardrails" "/usr/local/share/ai-git-guardrails" "$AI_GIT_GUARDRAILS_SELF_DIR/../share/ai-git-guardrails" "/opt/homebrew/share/guardrails" "/usr/local/share/guardrails" "$AI_GIT_GUARDRAILS_SELF_DIR/../share/guardrails"; do
     if [[ -f "$candidate/lefthook.yml" ]]; then
-      GUARDRAILS_TEMPLATES="$candidate"
+      AI_GIT_GUARDRAILS_TEMPLATES="$candidate"
       break
     fi
   done
 fi
 # Shell-readable universal checks registry.
-if [[ ! -f "$GUARDRAILS_TEMPLATES/checks/registry.sh" ]]; then
-  printf '%s\n' "ERROR: guardrails registry not found at $GUARDRAILS_TEMPLATES/checks/registry.sh" >&2
+if [[ ! -f "$AI_GIT_GUARDRAILS_TEMPLATES/checks/registry.sh" ]]; then
+  printf '%s\n' "ERROR: ai-git-guardrails registry not found at $AI_GIT_GUARDRAILS_TEMPLATES/checks/registry.sh" >&2
   exit 40
 fi
 # shellcheck source=checks/registry.sh
-. "$GUARDRAILS_TEMPLATES/checks/registry.sh"
+. "$AI_GIT_GUARDRAILS_TEMPLATES/checks/registry.sh"
 
 
-GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/guardrails"
-GUARDRAILS_OPT_OUT="$GUARDRAILS_CONFIG_DIR/.opt-out"
+AI_GIT_GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ai-git-guardrails"
+LEGACY_GUARDRAILS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/guardrails"
+if [[ ! -d "$AI_GIT_GUARDRAILS_CONFIG_DIR" && -d "$LEGACY_GUARDRAILS_CONFIG_DIR" ]]; then
+  if [[ "${1:-}" != "--version" && "${1:-}" != "-V" ]]; then
+    printf '%s\n' "WARN: using legacy config dir $LEGACY_GUARDRAILS_CONFIG_DIR; move it to $AI_GIT_GUARDRAILS_CONFIG_DIR" >&2
+  fi
+  AI_GIT_GUARDRAILS_CONFIG_DIR="$LEGACY_GUARDRAILS_CONFIG_DIR"
+fi
+AI_GIT_GUARDRAILS_OPT_OUT="$AI_GIT_GUARDRAILS_CONFIG_DIR/.opt-out"
 
 # Marker line inserted into installed hooks so we can identify ours.
-GUARDRAILS_HOOK_MARKER="# guardrails-managed: $GUARDRAILS_API_VERSION"
+AI_GIT_GUARDRAILS_HOOK_MARKER="# ai-git-guardrails-managed: $AI_GIT_GUARDRAILS_API_VERSION"
+LEGACY_GUARDRAILS_HOOK_MARKER="# guardrails-managed: $LEGACY_GUARDRAILS_API_VERSION"
 
 # Hooks we own.
-GUARDRAILS_HOOKS=(pre-commit pre-push commit-msg)
+AI_GIT_GUARDRAILS_HOOKS=(pre-commit pre-push commit-msg)
 
 # ---------- output helpers ----------
 red()    { printf '\033[31m%b\033[0m' "$*"; }
@@ -108,9 +117,9 @@ _resolve_hookspath() {
 
 _repo_is_opted_out() {
   local repo="$1" canonical
-  [[ -n "$repo" && -f "$GUARDRAILS_OPT_OUT" ]] || return 1
+  [[ -n "$repo" && -f "$AI_GIT_GUARDRAILS_OPT_OUT" ]] || return 1
   canonical=$(cd "$repo" 2>/dev/null && pwd -P) || return 1
-  grep -Fxq "$canonical" "$GUARDRAILS_OPT_OUT" 2>/dev/null
+  grep -Fxq "$canonical" "$AI_GIT_GUARDRAILS_OPT_OUT" 2>/dev/null
 }
 
 # Classify one hook file. Echoes: absent | ours | non-ours | shadowed | opt-out.
@@ -143,7 +152,10 @@ _classify_hook() {
   target="$hooks_dir/$hook"
   if [[ ! -e "$target" ]]; then
     echo "absent"
-  elif grep -Fq "$GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
+  elif grep -Fq "$AI_GIT_GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
+    echo "ours"
+  # Backward-compat: existing installs used this ownership marker before the rename.
+  elif grep -Fq "$LEGACY_GUARDRAILS_HOOK_MARKER" "$target" 2>/dev/null; then
     echo "ours"
   else
     echo "non-ours"
@@ -162,15 +174,15 @@ _classify_repo_hooks() {
   local_hp_field="${local_hp:-.}"
   global_hp_field="${global_hp:-.}"
 
-  for hook in "${GUARDRAILS_HOOKS[@]}"; do
+  for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
     path="$hooks_dir/$hook"
     owner=$(cd "$repo" && _classify_hook "$hooks_dir" "$hook")
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$hook" "$owner" "$path" "$local_hp_field" "$global_hp_field" "$opt_out"
   done
 }
 
-# Is the file at $1 owned by guardrails?
-_is_guardrails_hook() {
+# Is the file at $1 owned by ai-git-guardrails?
+_is_ai_git_guardrails_hook() {
   local hook_file="$1" hooks_dir hook
   [[ -f "$hook_file" ]] || return 1
   hooks_dir=$(dirname "$hook_file")
@@ -183,7 +195,7 @@ have() {
 
 _registry_skip_envs_for_hook() {
   local hook="$1" entry entry_hook _command skip_env _required_tools _rationale
-  for entry in "${GUARDRAILS_CHECKS[@]}"; do
+  for entry in "${AI_GIT_GUARDRAILS_CHECKS[@]}"; do
     IFS='|' read -r entry_hook _command skip_env _required_tools _rationale <<< "$entry"
     [[ "$entry_hook" == "$hook" ]] || continue
     printf '%s=1 ' "$skip_env"
@@ -199,42 +211,42 @@ _registry_skip_envs_for_hook() {
 #   embedded    — for embedding inside an existing hook script (pre-commit
 #                 framework, lefthook, manual script). Preserves "$@",
 #                 preserves stdin (required for pre-push ref lines),
-#                 propagates guardrails' exit code, and does not exec so
-#                 downstream hook logic can continue when guardrails passes.
+#                 propagates ai-git-guardrails' exit code, and does not exec so
+#                 downstream hook logic can continue when ai-git-guardrails passes.
 #   standalone  — for writing as a complete hook file. Uses exec, includes the
 #                 ownership marker, and matches installed/global-template hooks.
 #   bypass-help — for diagnostic messages: a single shell line that opts out of
-#                 guardrails for one hook invocation while preserving args/stdin.
+#                 ai-git-guardrails for one hook invocation while preserving args/stdin.
 #
 # Args/stdin/exit:
 #   - "$@" is forwarded in every mode (commit-msg needs the message path).
 #   - stdin is untouched; embedded pre-push keeps Git's ref update stream.
-#   - embedded exits with guardrails' non-zero status and continues on zero.
+#   - embedded exits with ai-git-guardrails' non-zero status and continues on zero.
 _compose_snippet() {
   local hook="$1" mode="$2"
 
   case "$mode" in
     embedded)
       cat <<EOF
-# guardrails compose: $hook
-# Preserves "\$@" and stdin; exits non-zero if guardrails blocks.
-if command -v guardrails >/dev/null 2>&1; then
-  guardrails run $hook "\$@" || exit \$?
+# ai-git-guardrails compose: $hook
+# Preserves "\$@" and stdin; exits non-zero if ai-git-guardrails blocks.
+if command -v ai-git-guardrails >/dev/null 2>&1; then
+  ai-git-guardrails run $hook "\$@" || exit \$?
 fi
 EOF
       ;;
     standalone)
       cat <<EOF
 #!/usr/bin/env bash
-$GUARDRAILS_HOOK_MARKER
-# Generated by guardrails v$GUARDRAILS_VERSION on $(date -u +%Y-%m-%dT%H:%M:%SZ).
-# DO NOT EDIT BY HAND. Run \`guardrails uninstall\` to remove.
+$AI_GIT_GUARDRAILS_HOOK_MARKER
+# Generated by ai-git-guardrails v$AI_GIT_GUARDRAILS_VERSION on $(date -u +%Y-%m-%dT%H:%M:%SZ).
+# DO NOT EDIT BY HAND. Run \`ai-git-guardrails uninstall\` to remove.
 
-exec guardrails run $hook "\$@"
+exec ai-git-guardrails run $hook "\$@"
 EOF
       ;;
     bypass-help)
-      printf '%sguardrails run %s "$@" || true\n' "$(_registry_skip_envs_for_hook "$hook")" "$hook"
+      printf '%sai-git-guardrails run %s "$@" || true\n' "$(_registry_skip_envs_for_hook "$hook")" "$hook"
       ;;
     *)
       return 1
@@ -248,7 +260,7 @@ _generate_shim() {
 }
 
 # ---------- subcommands ----------
-cmd_version() { echo "guardrails $GUARDRAILS_VERSION"; }
+cmd_version() { echo "ai-git-guardrails $AI_GIT_GUARDRAILS_VERSION"; }
 
 cmd_install() {
   local force=0 skip_hooks=()
@@ -278,15 +290,15 @@ cmd_install() {
     if [[ "$resolved_local_hooks_path" != "$hooks_dir" && "$local_hooks_path" != "$global_hooks_path" ]]; then
       {
         printf '%s\n\n' "this repo has a local core.hooksPath = $local_hooks_path"
-        printf '%s\n' "guardrails cannot safely install into .git/hooks/ because that local"
+        printf '%s\n' "ai-git-guardrails cannot safely install into .git/hooks/ because that local"
         printf '%s\n' "override redirects hooks elsewhere. Options:"
         printf '\n'
-        printf '%s\n' "  1. Wire guardrails into the existing hook system. Add this snippet"
+        printf '%s\n' "  1. Wire ai-git-guardrails into the existing hook system. Add this snippet"
         printf '%s\n\n' "     near the top of each existing hook you want guarded:"
         _compose_snippet '<hook>' embedded | while IFS= read -r line; do printf '         %s\n' "$line"; done
         printf '\n'
         printf '%s\n' "  2. Override (NOT recommended unless you understand the consequences):"
-        printf '%s\n' "         guardrails install --force"
+        printf '%s\n' "         ai-git-guardrails install --force"
       } >&2
       exit 30
     fi
@@ -297,7 +309,7 @@ cmd_install() {
   if [[ -n "$hook_systems" ]] && (( force == 0 )); then
     warn "detected existing hook system(s) in this repo:"
     while IFS= read -r sys; do printf '       - %s\n' "$sys" >&2; done <<< "$hook_systems"
-    warn "guardrails will install per-repo hooks alongside, but you may want to compose explicitly."
+    warn "ai-git-guardrails will install per-repo hooks alongside, but you may want to compose explicitly."
     warn "for example, in .husky/pre-commit add:"
     _compose_snippet pre-commit embedded | while IFS= read -r line; do info "         $line"; done
   fi
@@ -305,7 +317,7 @@ cmd_install() {
   mkdir -p "$hooks_dir"
 
   local installed=0 skipped=0 conflicted=0
-  for hook in "${GUARDRAILS_HOOKS[@]}"; do
+  for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
     # Honor --skip
     local skip=0
     for s in "${skip_hooks[@]:-}"; do [[ "$s" == "$hook" ]] && skip=1; done
@@ -327,7 +339,7 @@ cmd_install() {
         ;;
       non-ours)
         if (( force == 0 )); then
-          warn "$hook already exists and is not managed by guardrails: $target"
+          warn "$hook already exists and is not managed by ai-git-guardrails: $target"
           conflicted=$((conflicted + 1))
           continue
         fi
@@ -349,7 +361,7 @@ cmd_install() {
   fi
 
   green "installed "
-  printf '%d/%d hooks in %s\n' "$installed" "${#GUARDRAILS_HOOKS[@]}" "$repo"
+  printf '%d/%d hooks in %s\n' "$installed" "${#AI_GIT_GUARDRAILS_HOOKS[@]}" "$repo"
   (( skipped > 0 ))    && yellow "skipped: $skipped\n"
   (( conflicted > 0 )) && yellow "conflicts: $conflicted (use --force to override)\n"
   return 0
@@ -362,7 +374,7 @@ cmd_uninstall() {
   hooks_dir=$(_repo_hooks_dir) || die 10 "could not resolve hooks dir"
 
   local removed=0 not_ours=0
-  for hook in "${GUARDRAILS_HOOKS[@]}"; do
+  for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
     local target="$hooks_dir/$hook" state
     state=$(_classify_hook "$hooks_dir" "$hook")
     case "$state" in
@@ -380,9 +392,9 @@ cmd_uninstall() {
   # set of our hooks, restore the global default by unsetting it.
   local local_hp; local_hp=$(_repo_local_hookspath)
   if [[ "$local_hp" == "$hooks_dir" ]]; then
-    # Are there any non-guardrails hooks left to justify keeping the override?
+    # Are there any non-ai-git-guardrails hooks left to justify keeping the override?
     local any_other=0
-    for hook in "${GUARDRAILS_HOOKS[@]}"; do
+    for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
       [[ -f "$hooks_dir/$hook" ]] && any_other=1
     done
     if (( any_other == 0 )); then
@@ -392,14 +404,14 @@ cmd_uninstall() {
   fi
 
   green "uninstalled "
-  printf '%d guardrails hooks from %s\n' "$removed" "$repo"
-  (( not_ours > 0 )) && warn "left $not_ours non-guardrails hooks intact"
+  printf '%d ai-git-guardrails hooks from %s\n' "$removed" "$repo"
+  (( not_ours > 0 )) && warn "left $not_ours non-ai-git-guardrails hooks intact"
   return 0
 }
 
 cmd_run() {
   local hook="${1:-}"
-  [[ -n "$hook" ]] || die 10 "usage: guardrails"$' '"run <hook>"
+  [[ -n "$hook" ]] || die 10 "usage: ai-git-guardrails run <hook>"
   shift
 
   # Global bypass.
@@ -408,25 +420,27 @@ cmd_run() {
   # User-owned per-repo opt-out.
   local repo
   repo=$(_repo_toplevel || true)
-  if [[ -n "$repo" ]] && [[ -f "$GUARDRAILS_OPT_OUT" ]]; then
-    if grep -Fxq "$repo" "$GUARDRAILS_OPT_OUT"; then
+  if [[ -n "$repo" ]] && [[ -f "$AI_GIT_GUARDRAILS_OPT_OUT" ]]; then
+    if grep -Fxq "$repo" "$AI_GIT_GUARDRAILS_OPT_OUT"; then
       exit 0
     fi
   fi
 
   # Defer to lefthook with our shipped config.
-  local config="$GUARDRAILS_TEMPLATES/lefthook.yml"
-  [[ -f "$config" ]] || die 40 "guardrails lefthook.yml not found at $config"
+  local config="$AI_GIT_GUARDRAILS_TEMPLATES/lefthook.yml"
+  [[ -f "$config" ]] || die 40 "ai-git-guardrails lefthook.yml not found at $config"
 
   # XDG init.sh (PATH extension before sanitization, if user wants it).
-  local user_init="${XDG_CONFIG_HOME:-$HOME/.config}/guardrails/init.sh"
+  local user_init="$AI_GIT_GUARDRAILS_CONFIG_DIR/init.sh"
   [[ -r "$user_init" ]] && . "$user_init"
 
   # PATH sanitization (defense against hijack).
-  export PATH="${GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}"
+  export PATH="${AI_GIT_GUARDRAILS_PATH:-${GUARDRAILS_PATH:-/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:$HOME/.local/share/bun/bin:$HOME/.local/bin}}"
 
   # Make template path visible to lefthook config.
-  export GUARDRAILS_TEMPLATES="$GUARDRAILS_TEMPLATES"
+  export AI_GIT_GUARDRAILS_TEMPLATES="$AI_GIT_GUARDRAILS_TEMPLATES"
+  # Backward-compat: older lefthook templates and user hooks may still read GUARDRAILS_TEMPLATES.
+  export GUARDRAILS_TEMPLATES="${GUARDRAILS_TEMPLATES:-$AI_GIT_GUARDRAILS_TEMPLATES}"
 
   case "$hook" in
     commit-msg)
@@ -437,13 +451,13 @@ cmd_run() {
       # pre-push receives ref data on stdin. Run branch-guard directly (lefthook
       # consumes pre-push stdin for its templates), then exec lefthook with same.
       local tmp
-      tmp=$(mktemp -t guardrails-prepush.XXXXXX)
+      tmp=$(mktemp -t ai-git-guardrails-prepush.XXXXXX)
       # Double-quote so $tmp expands at trap-set time. Single quotes would
       # defer expansion until the trap fires — by which point `local tmp`
       # is out of scope and `set -u` aborts.
       trap "rm -f '$tmp'" EXIT
       cat > "$tmp"
-      if [[ -z "${SKIP_BRANCH_GUARD:-}" ]] && ! "$GUARDRAILS_TEMPLATES/checks/branch-guard.sh" < "$tmp"; then
+      if [[ -z "${SKIP_BRANCH_GUARD:-}" ]] && ! "$AI_GIT_GUARDRAILS_TEMPLATES/checks/branch-guard.sh" < "$tmp"; then
         exit 1
       fi
       env LEFTHOOK_CONFIG="$config" lefthook run pre-push --no-tty --no-auto-install < "$tmp"
@@ -471,13 +485,13 @@ cmd_doctor() {
     return $?
   fi
   local fail=0
-  printf '%-40s' "guardrails version"; green "$GUARDRAILS_VERSION\n"
+  printf '%-40s' "ai-git-guardrails version"; green "$AI_GIT_GUARDRAILS_VERSION\n"
   printf '%-40s' "templates dir"
-  if [[ -f "$GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then green "$GUARDRAILS_TEMPLATES\n"
-  else red "MISSING: $GUARDRAILS_TEMPLATES/lefthook.yml\n"; fail=1; fi
+  if [[ -f "$AI_GIT_GUARDRAILS_TEMPLATES/lefthook.yml" ]]; then green "$AI_GIT_GUARDRAILS_TEMPLATES\n"
+  else red "MISSING: $AI_GIT_GUARDRAILS_TEMPLATES/lefthook.yml\n"; fail=1; fi
 
   local tool
-  for tool in "${GUARDRAILS_REQUIRED_TOOLS[@]}"; do
+  for tool in "${AI_GIT_GUARDRAILS_REQUIRED_TOOLS[@]}"; do
     printf '%-40s' "$tool reachable"
     if have "$tool"; then
       green "$(command -v "$tool")\n"
@@ -486,7 +500,7 @@ cmd_doctor() {
       fail=1
     fi
   done
-  for tool in "${GUARDRAILS_OPTIONAL_TOOLS[@]}"; do
+  for tool in "${AI_GIT_GUARDRAILS_OPTIONAL_TOOLS[@]}"; do
     printf '%-40s' "$tool reachable"
     if have "$tool"; then
       green "$(command -v "$tool")\n"
@@ -496,7 +510,7 @@ cmd_doctor() {
   done
 
   printf '%-40s' "config dir"
-  if [[ -d "$GUARDRAILS_CONFIG_DIR" ]]; then green "$GUARDRAILS_CONFIG_DIR\n"
+  if [[ -d "$AI_GIT_GUARDRAILS_CONFIG_DIR" ]]; then green "$AI_GIT_GUARDRAILS_CONFIG_DIR\n"
   else dim "(absent — no opt-outs configured)\n"; fi
 
   # If we're inside a repo, also report install state for THIS repo.
@@ -535,7 +549,7 @@ _render_hook_detail() {
   local hook="$1" owner="$2"
   printf '%-40s' "$hook"
   case "$owner" in
-    ours) green "installed (guardrails)\n" ;;
+    ours) green "installed (ai-git-guardrails)\n" ;;
     non-ours) yellow "present (not ours)\n" ;;
     shadowed) yellow "shadowed by core.hooksPath\n" ;;
     opt-out) dim "opt-out\n" ;;
@@ -586,7 +600,7 @@ cmd_doctor_all() {
     esac
   done < <(_find_git_repos "$root")
 
-  printf 'guardrails doctor --all — scan root: %s\n' "$root"
+  printf 'ai-git-guardrails doctor --all — scan root: %s\n' "$root"
   printf '  %d repos | ' "$total"
   green "$installed installed"; printf ' | '
   dim "$not_installed not-installed"; printf ' | '
@@ -594,7 +608,7 @@ cmd_doctor_all() {
   dim "$opt_out opt-out"; printf '\n\n'
 
   if (( installed > 0 )); then
-    green "installed — guardrails-managed hooks present:\n"
+    green "installed — ai-git-guardrails-managed hooks present:\n"
     for r in "${repos_installed[@]}"; do
       printf '  ✓ %s\n' "${r#$root/}"
     done
@@ -602,7 +616,7 @@ cmd_doctor_all() {
   fi
 
   if (( not_installed > 0 )); then
-    dim "not-installed — run \`cd <repo> && guardrails install\` to enroll:\n"
+    dim "not-installed — run \`cd <repo> && ai-git-guardrails install\` to enroll:\n"
     for r in "${repos_not_installed[@]}"; do
       printf '  · %s\n' "${r#$root/}"
     done
@@ -610,7 +624,7 @@ cmd_doctor_all() {
   fi
 
   if (( bypass_other > 0 )); then
-    yellow "bypass-other — core.hooksPath resolves to a non-guardrails path:\n"
+    yellow "bypass-other — core.hooksPath resolves to a non-ai-git-guardrails path:\n"
     for r in "${repos_bypass_other[@]}"; do
       local hp; hp=$(git -C "$r" config --local --get core.hooksPath 2>/dev/null || git -C "$r" config --global --get core.hooksPath 2>/dev/null || true)
       printf '  ✗ %s   (hooksPath: %s)\n' "${r#$root/}" "$hp"
@@ -691,17 +705,17 @@ cmd_global_template() {
   fi
   (($# == 0)) || die 10 "unexpected positional: $1"
 
-  local template_dir="${XDG_DATA_HOME:-$HOME/.local/share}/guardrails/git-template"
+  local template_dir="${XDG_DATA_HOME:-$HOME/.local/share}/ai-git-guardrails/git-template"
   local hooks_dir="$template_dir/hooks"
   mkdir -p "$hooks_dir"
-  for hook in "${GUARDRAILS_HOOKS[@]}"; do
+  for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
     _generate_shim "$hook" > "$hooks_dir/$hook"
     chmod +x "$hooks_dir/$hook"
   done
   git config --global init.templateDir "$template_dir"
   green "global template installed "
   printf '%s\n' "$template_dir"
-  info "→ new \`git init\` / \`git clone\` will auto-install guardrails hooks"
+  info "→ new \`git init\` / \`git clone\` will auto-install ai-git-guardrails hooks"
   info "→ undo: git config --global --unset init.templateDir"
 }
 
@@ -728,7 +742,7 @@ cmd_migrate() {
   local global_hp; global_hp=$(_repo_global_hookspath)
   if [[ "$global_hp" == "$legacy" ]]; then
     info "→ global core.hooksPath currently points at $legacy"
-    info "  this will be unset (binary install puts guardrails on PATH)"
+    info "  this will be unset (binary install puts ai-git-guardrails on PATH)"
   fi
 
   # Find opt-out paths to preserve
@@ -743,8 +757,8 @@ cmd_migrate() {
     yellow "DRY RUN — re-run with --apply to perform the migration.\n"
     info "What would happen:"
     info "  1. Unset global core.hooksPath (if it points at $legacy)"
-    info "  2. Copy $legacy/.opt-out to $GUARDRAILS_OPT_OUT (if present)"
-    info "  3. Print a list of repos to run \`guardrails install\` in"
+    info "  2. Copy $legacy/.opt-out to $AI_GIT_GUARDRAILS_OPT_OUT (if present)"
+    info "  3. Print a list of repos to run \`ai-git-guardrails install\` in"
     info "  4. NOT delete $legacy (you do that manually after verifying)"
     return 0
   fi
@@ -756,15 +770,15 @@ cmd_migrate() {
   fi
 
   if [[ -f "$legacy_optout" ]]; then
-    mkdir -p "$GUARDRAILS_CONFIG_DIR"
-    cp "$legacy_optout" "$GUARDRAILS_OPT_OUT"
-    green "✓ migrated opt-out file to $GUARDRAILS_OPT_OUT\n"
+    mkdir -p "$AI_GIT_GUARDRAILS_CONFIG_DIR"
+    cp "$legacy_optout" "$AI_GIT_GUARDRAILS_OPT_OUT"
+    green "✓ migrated opt-out file to $AI_GIT_GUARDRAILS_OPT_OUT\n"
   fi
 
   info ""
-  yellow "next: install guardrails per-repo in any repo you want covered.\n"
+  yellow "next: install ai-git-guardrails per-repo in any repo you want covered.\n"
   info "for each repo:"
-  info "  cd <repo> && guardrails install"
+  info "  cd <repo> && ai-git-guardrails install"
   info ""
   info "when you've verified the new install works:"
   info "  rm -rf $legacy"
@@ -783,38 +797,38 @@ main() {
     --global-template|global-template) cmd_global_template "$@" ;;
     --version|-V)   cmd_version ;;
     -h|--help|help|"") cmd_help ;;
-    *)              die 10 "unknown subcommand: $sub (try 'guardrails --help')" ;;
+    *)              die 10 "unknown subcommand: $sub (try 'ai-git-guardrails --help')" ;;
   esac
 }
 
 cmd_help() {
   cat <<EOF
-guardrails $GUARDRAILS_VERSION — personal git-hook quality layer
+ai-git-guardrails $AI_GIT_GUARDRAILS_VERSION — personal git-hook quality layer
 
 usage:
-  guardrails install [--force] [--skip <hook>]
+  ai-git-guardrails install [--force] [--skip <hook>]
                                      install hooks into the current repo (per-repo,
                                      ownership-marker based, conflict-aware)
-  guardrails uninstall               remove only guardrails-managed hooks
+  ai-git-guardrails uninstall               remove only ai-git-guardrails-managed hooks
 EOF
-  printf '  guardrails %s <hook>              execute the named hook (invoked by installed shims)\n' run
+  printf '  ai-git-guardrails %s <hook>              execute the named hook (invoked by installed shims)\n' run
   cat <<EOF
-  guardrails doctor                  audit current repo + tool reachability
-  guardrails migrate [--apply]       migrate from legacy global-hooksPath install
-  guardrails --global-template       configure git init.templateDir for auto-install on new clones
+  ai-git-guardrails doctor                  audit current repo + tool reachability
+  ai-git-guardrails migrate [--apply]       migrate from legacy global-hooksPath install
+  ai-git-guardrails --global-template       configure git init.templateDir for auto-install on new clones
 
-  guardrails --version | -V
-  guardrails --help
+  ai-git-guardrails --version | -V
+  ai-git-guardrails --help
 
 config:
-  ${XDG_CONFIG_HOME:-$HOME/.config}/guardrails/         user config dir (opt-out, init.sh)
-  $GUARDRAILS_TEMPLATES/checks/registry.sh   source of truth for what runs
+  ${XDG_CONFIG_HOME:-$HOME/.config}/ai-git-guardrails/         user config dir (opt-out, init.sh)
+  $AI_GIT_GUARDRAILS_TEMPLATES/checks/registry.sh   source of truth for what runs
 
 bypass:
-  SKIP_PERSONAL_HOOKS=1                skip all guardrails checks
+  SKIP_PERSONAL_HOOKS=1                skip all ai-git-guardrails checks
   per-check SKIP_* env vars          skip one registry check
   ALLOW_PROTECTED_PUSH=1               one-time protected-branch override
-  git commit --no-verify               nuclear (skips guardrails + repo hooks)
+  git commit --no-verify               nuclear (skips ai-git-guardrails + repo hooks)
 EOF
 }
 

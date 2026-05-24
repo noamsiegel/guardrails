@@ -31,4 +31,4 @@ jobs:
           bash -n checks/fallow.sh
 
       - name: Run bun-test suite
-        run: bun test tests/guardrails.test.ts
+        run: bun test tests/ai-git-guardrails.test.ts
