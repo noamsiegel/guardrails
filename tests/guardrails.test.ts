@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -501,5 +501,86 @@ describe('hook classifier', () => {
     run('git', ['config', '--global', 'core.hooksPath', '.global-hooks'], { env: { ...envForRepo(repo), HOME: home } });
     expect(classify('pre-commit', { ...envForRepo(repo), HOME: home }).stdout.trim()).toBe('shadowed');
     cleanup(home);
+  });
+});
+
+describe('compose snippets', () => {
+  function compose(hook: string, mode: string): SpawnResult {
+    return run('bash', ['-c', `source "${GUARDRAILS}"; _compose_snippet "$1" "$2"`, 'bash', hook, mode], {
+      env: testEnv(mkdtempSync(join(tmpdir(), 'guardrails-xdg-'))),
+    });
+  }
+
+  test('standalone commit-msg forwards hook arguments', () => {
+    const r = compose('commit-msg', 'standalone');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('exec guardrails run commit-msg "$@"');
+  });
+
+  test('embedded pre-push preserves stdin', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'guardrails-compose-'));
+    try {
+      const bin = join(dir, 'guardrails');
+      const stdinFile = join(dir, 'stdin');
+      const argsFile = join(dir, 'args');
+      writeFileSync(bin, `#!/usr/bin/env bash
+printf '%s\\n' "$*" > "${argsFile}"
+cat > "${stdinFile}"
+exit "\${FAKE_GUARDRAILS_STATUS:-0}"
+`);
+      chmodSync(bin, 0o755);
+
+      const snippet = compose('pre-push', 'embedded').stdout;
+      const stdin = 'refs/heads/main 111 refs/heads/main 000\n';
+      const r = run('bash', ['-c', snippet, 'hook-shell', 'remote', 'url'], {
+        input: stdin,
+        env: { ...testEnv(join(dir, 'xdg')), PATH: `${dir}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(r.status).toBe(0);
+      expect(readFileSync(argsFile, 'utf8')).toBe('run pre-push remote url\n');
+      expect(readFileSync(stdinFile, 'utf8')).toBe(stdin);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('embedded mode propagates non-zero guardrails status', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'guardrails-compose-'));
+    try {
+      const bin = join(dir, 'guardrails');
+      writeFileSync(bin, `#!/usr/bin/env bash
+exit "\${FAKE_GUARDRAILS_STATUS:-0}"
+`);
+      chmodSync(bin, 0o755);
+
+      const snippet = compose('pre-commit', 'embedded').stdout;
+      const r = run('bash', ['-c', `${snippet}
+echo unreachable`], {
+        env: {
+          ...testEnv(join(dir, 'xdg')),
+          PATH: `${dir}:${process.env.PATH ?? ''}`,
+          FAKE_GUARDRAILS_STATUS: '17',
+        },
+      });
+
+      expect(r.status).toBe(17);
+      expect(r.stdout).not.toContain('unreachable');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('bypass-help emits a single pastable shell line', () => {
+    const r = compose('pre-commit', 'bypass-help');
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('SKIP_PERSONAL_HOOKS=1 guardrails run pre-commit "$@" || true');
+    expect(r.stdout.trim()).not.toContain('\n');
+    expect(run('bash', ['-n'], { input: r.stdout }).status).toBe(0);
+  });
+
+  test('invalid compose mode returns non-zero', () => {
+    const r = compose('pre-commit', 'bogus');
+    expect(r.status).not.toBe(0);
   });
 });

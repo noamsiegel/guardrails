@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] — compose-shim contract
+
+### Added
+- `_compose_snippet <hook> <mode>` centralizes embedded, standalone, and bypass-help hook snippets.
+- Compose-snippet tests cover argument forwarding, pre-push stdin preservation, exit-code propagation, bypass-help shell syntax, and invalid modes.
+
+### Changed
+- Installed hooks, install conflict guidance, doctor bypass guidance, and README examples now share the same canonical compose contract.
+
 ## [0.5.0] — doctor unification + lifecycle coverage
 
 ### Added

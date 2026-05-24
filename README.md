@@ -67,8 +67,41 @@ guardrails --version
 
 `guardrails install` is conflict-aware: it refuses to clobber non-guardrails
 hooks unless you pass `--force`, and it detects Husky/lefthook/pre-commit
-configs in the repo and prints a one-line compose snippet if you'd rather
-chain than override.
+configs in the repo and prints a canonical compose snippet if you'd rather
+chain than override. Embedded shims preserve `"$@"`, propagate failures, and
+leave stdin untouched (required for `pre-push` ref lines).
+
+### Compose snippets
+
+`pre-commit`:
+
+```bash
+# guardrails compose: pre-commit
+# Preserves "$@" and stdin; exits non-zero if guardrails blocks.
+if command -v guardrails >/dev/null 2>&1; then
+  guardrails run pre-commit "$@" || exit $?
+fi
+```
+
+`pre-push`:
+
+```bash
+# guardrails compose: pre-push
+# Preserves "$@" and stdin; exits non-zero if guardrails blocks.
+if command -v guardrails >/dev/null 2>&1; then
+  guardrails run pre-push "$@" || exit $?
+fi
+```
+
+`commit-msg`:
+
+```bash
+# guardrails compose: commit-msg
+# Preserves "$@" and stdin; exits non-zero if guardrails blocks.
+if command -v guardrails >/dev/null 2>&1; then
+  guardrails run commit-msg "$@" || exit $?
+fi
+```
 
 ## Bypass
 
