@@ -14,8 +14,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-AI_GIT_GUARDRAILS_VERSION="0.8.1"
+AI_GIT_GUARDRAILS_VERSION="0.8.2"
 AI_GIT_GUARDRAILS_API_VERSION="ai-git-guardrails.v0"
+AI_GIT_GUARDRAILS_RECORD_SEP=$'\x1f'
 LEGACY_GUARDRAILS_API_VERSION="guardrails.v0"
 
 # Resolve install dir. When run from brew, AI_GIT_GUARDRAILS_HOME points at pkgshare.
@@ -162,7 +163,7 @@ _classify_hook() {
   fi
 }
 
-# Classify all owned hooks for a repo. TSV: hook owner path hooksPath_local hooksPath_global opt_out
+# Classify all owned hooks for a repo. Record fields: hook owner path hooksPath_local hooksPath_global opt_out
 _classify_repo_hooks() {
   local repo="$1" hooks_dir local_hp global_hp opt_out hook owner path local_hp_field global_hp_field
   hooks_dir=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
@@ -177,7 +178,7 @@ _classify_repo_hooks() {
   for hook in "${AI_GIT_GUARDRAILS_HOOKS[@]}"; do
     path="$hooks_dir/$hook"
     owner=$(cd "$repo" && _classify_hook "$hooks_dir" "$hook")
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$hook" "$owner" "$path" "$local_hp_field" "$global_hp_field" "$opt_out"
+    printf '%s%s%s%s%s%s%s%s%s%s%s\n' "$hook" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$owner" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$path" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$local_hp_field" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$global_hp_field" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$opt_out"
   done
 }
 
@@ -526,7 +527,7 @@ cmd_doctor() {
 _render_repo_audit_detail() {
   local record="$1"
   local repo opt_out hooks_dir_kind pre_commit pre_push commit_msg category
-  IFS=$'\t' read -r repo opt_out hooks_dir_kind pre_commit pre_push commit_msg category <<< "$record"
+  IFS=$AI_GIT_GUARDRAILS_RECORD_SEP read -r repo opt_out hooks_dir_kind pre_commit pre_push commit_msg category <<< "$record"
 
   printf '\n%s\n' "$(dim "─── current repo: $repo ───")"
   printf '%-40s' "category"; _render_category "$category"
@@ -577,7 +578,7 @@ cmd_doctor_all() {
     total=$((total + 1))
     local record audit_repo opt_out_flag hooks_dir_kind pre_commit pre_push commit_msg category
     record=$(_audit_repo "$repo")
-    IFS=$'\t' read -r audit_repo opt_out_flag hooks_dir_kind pre_commit pre_push commit_msg category <<< "$record"
+    IFS=$AI_GIT_GUARDRAILS_RECORD_SEP read -r audit_repo opt_out_flag hooks_dir_kind pre_commit pre_push commit_msg category <<< "$record"
     case "$category" in
       installed)
         repos_installed+=("$audit_repo")
@@ -658,11 +659,11 @@ _audit_repo() {
   _repo_is_opted_out "$repo" && opt_out=1
 
   if ! _classify_repo_hooks "$repo" >/dev/null 2>&1; then
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "0" "unknown" "absent" "absent" "absent" "not-installed"
+    printf '%s%s%s%s%s%s%s%s%s%s%s%s%s\n' "$repo" "$AI_GIT_GUARDRAILS_RECORD_SEP" "0" "$AI_GIT_GUARDRAILS_RECORD_SEP" "unknown" "$AI_GIT_GUARDRAILS_RECORD_SEP" "absent" "$AI_GIT_GUARDRAILS_RECORD_SEP" "absent" "$AI_GIT_GUARDRAILS_RECORD_SEP" "absent" "$AI_GIT_GUARDRAILS_RECORD_SEP" "not-installed"
     return 0
   fi
 
-  while IFS=$'\t' read -r hook owner path local_hp global_hp _row_opt_out; do
+  while IFS=$AI_GIT_GUARDRAILS_RECORD_SEP read -r hook owner path local_hp global_hp _row_opt_out; do
     case "$hook" in
       pre-commit) pre_commit="$owner" ;;
       pre-push) pre_push="$owner" ;;
@@ -691,7 +692,7 @@ _audit_repo() {
   elif (( any_shadowed == 1 )); then category="bypass-other"
   else category="not-installed"; fi
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$opt_out" "$hooks_dir_kind" "$pre_commit" "$pre_push" "$commit_msg" "$category"
+  printf '%s%s%s%s%s%s%s%s%s%s%s%s%s\n' "$repo" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$opt_out" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$hooks_dir_kind" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$pre_commit" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$pre_push" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$commit_msg" "$AI_GIT_GUARDRAILS_RECORD_SEP" "$category"
 }
 
 cmd_global_template() {

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2] — TSV separator hotfix + RELEASING.md
+
+### Fixed
+- Classifier record stream (`_classify_repo_hooks`, `_audit_repo`, `doctor`, `doctor --all`) was emitting plain-tab-separated records despite docs documenting `\x1f` (unit separator). Empty fields would silently shift columns under `IFS=$'\t'`. Migrated producer and all consumers to `AI_GIT_GUARDRAILS_RECORD_SEP=$'\x1f'` so empty fields are preserved.
+
+### Added
+- `RELEASING.md`: copy-pasteable release checklist + recovery notes (stale shim, tag misalignment).
+- `CONTEXT.md`: TSV record convention section citing the specific helpers and the `IFS` failure mode it prevents.
+
 ## [0.8.1] — doctor path + opt-out hotfix + architecture docs
 
 ### Added

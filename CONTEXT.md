@@ -56,6 +56,22 @@ The intended dependency shape is: commands render and mutate; classifier owns ho
 - **Hook-manager writers by default**: default install should remain user-owned `.git/hooks` plus conflict-aware refusal. Manager-specific mutation can exist only as an explicit feature with tests for Husky/lefthook/pre-commit surfaces.
 - **Full Go rewrite**: Bash is still adequate for the current macOS/Homebrew personal CLI. Revisit only when shell quoting/TSV invariants or cross-platform distribution cost starts dominating feature work.
 
+## TSV record convention
+
+Classifier helpers (`_classify_hook`, `_classify_repo_hooks`, `_audit_repo`) emit
+records as TSV. **Use a non-whitespace separator, never plain `\t`** — bash
+`read -d $'\t'` collapses adjacent empty fields, which shifts column meaning.
+
+The classifier uses `\x1f` (unit separator). Empty fields are preserved
+because the separator is unambiguous. Consumers MUST use a matching IFS:
+
+```bash
+IFS=$'\x1f' read -r repo hooks_dir local_hooksPath_kind opt_out hook owner status
+```
+
+This is a load-bearing invariant. Earlier sessions hit production bugs from
+`IFS=$'\t'` losing empty fields.
+
 ## Public API stability
 
 There is no library API. The contract is the `ai-git-guardrails` binary, generated hook marker/version, supported subcommands, skip/bypass environment variables, config locations, and shipped check behavior.
